@@ -38,8 +38,8 @@ Important files:
 - `apps/api/src/apps.config.ts`: list of deployable apps and script paths.
 - `apps/api/src/env.ts`: required API environment variables.
 - `apps/web/src/lib/api.ts`: web API client using `NEXT_PUBLIC_API_URL`.
-- `apps/api/ecosystem.config.js`: PM2 config for API.
-- `apps/web/ecosystem.config.js`: PM2 config for web.
+- `apps/api/ecosystem.config.cjs`: PM2 config for API.
+- `apps/web/ecosystem.config.cjs`: PM2 config for web.
 
 ## 1. Clone And Install
 
@@ -213,9 +213,9 @@ Start the services:
 
 ```bash
 cd apps/api
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 cd ../web
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
