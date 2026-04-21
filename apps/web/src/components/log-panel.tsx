@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 
+import { StatusBadge } from "@/components/status-badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -12,7 +12,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { StatusBadge } from "@/components/status-badge";
 import { getPin, PIN_QUERY_PARAM, redirectToLogin } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { DeployStatus } from "@/types";
@@ -38,14 +37,20 @@ function getLineKind(text: string): LogLine["kind"] {
     return "error";
   }
 
-  if (lower.includes("success") || lower.includes("done") || text.includes("✓")) {
+  if (lower.includes("success") || lower.includes("done")) {
     return "success";
   }
 
   return "normal";
 }
 
-export function LogPanel({ deployId, appLabel, status, open, onClose }: LogPanelProps) {
+export function LogPanel({
+  deployId,
+  appLabel,
+  status,
+  open,
+  onClose,
+}: LogPanelProps) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -95,19 +100,20 @@ export function LogPanel({ deployId, appLabel, status, open, onClose }: LogPanel
       eventSource.close();
     };
 
-    eventSource.onmessage = (event) => {
-      if (event.data === "[DONE]") {
-        finishStream();
-        return;
-      }
-
+    const handleLog = (event: MessageEvent<string>) => {
       pushLine(event.data);
     };
 
-    eventSource.addEventListener("end", finishStream);
-    eventSource.addEventListener("complete", finishStream);
+    const handleExit = (event: MessageEvent<string>) => {
+      pushLine(`Deploy ${event.data}`, getLineKind(event.data));
+      finishStream();
+    };
+
+    eventSource.onmessage = handleLog;
+    eventSource.addEventListener("log", handleLog);
+    eventSource.addEventListener("exit", handleExit);
     eventSource.onerror = () => {
-      if (eventSource.readyState === EventSource.CLOSED) {
+      if (finished || eventSource.readyState === EventSource.CLOSED) {
         finishStream();
         return;
       }
@@ -124,7 +130,6 @@ export function LogPanel({ deployId, appLabel, status, open, onClose }: LogPanel
   return (
     <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <SheetContent className="flex w-full flex-col gap-0 border-l border-white/7 bg-[#080808] p-0 text-zinc-100 sm:max-w-2xl">
-        {/* Terminal header */}
         <SheetHeader className="flex-row items-center justify-between border-b border-white/7 px-5 py-4">
           <div className="flex items-center gap-3">
             <SheetTitle className="text-sm font-medium text-foreground">
@@ -133,11 +138,10 @@ export function LogPanel({ deployId, appLabel, status, open, onClose }: LogPanel
             {status && <StatusBadge status={status} />}
           </div>
           <SheetDescription className="font-mono text-xs text-zinc-600">
-            {deployId ?? "—"}
+            {deployId ?? "-"}
           </SheetDescription>
         </SheetHeader>
 
-        {/* Log output */}
         <ScrollArea className="flex-1">
           <div className="space-y-px p-5 font-mono text-[13px] leading-[1.65]">
             {lines.length === 0 ? (

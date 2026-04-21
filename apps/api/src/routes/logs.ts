@@ -27,12 +27,21 @@ route.get("/:deployId", async (c) => {
       return;
     }
 
+    let finalStatus = deploy.status;
     const unsubscribe = subscribeToDeploy(deployId, async (event) => {
-      await stream.writeSSE({ event: event.type, data: event.type === "log" ? event.data : event.status });
+      if (event.type === "exit") {
+        finalStatus = event.status;
+      }
+
+      await stream.writeSSE({
+        event: event.type,
+        data: event.type === "log" ? event.data : event.status,
+      });
     });
 
     await runningDeploy.completion;
     unsubscribe?.();
+    await stream.writeSSE({ event: "exit", data: finalStatus });
   });
 });
 
