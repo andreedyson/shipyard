@@ -19,10 +19,10 @@ app.route("/", routes);
 serve(
   {
     fetch: app.fetch,
-    hostname: "localhost",
+    hostname: env.HOST,
     port: env.PORT,
   },
   (info) => {
-    console.log(`Shipyard API listening on http://localhost:${info.port}`);
+    console.log(`Shipyard API listening on http://${env.HOST}:${info.port}`);
   },
 );

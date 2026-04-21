@@ -58,6 +58,7 @@ DATABASE_URL="postgresql://shipyard:your-password@localhost:5432/shipyard"
 SHIPYARD_PIN="change-this-pin"
 RESEND_API_KEY="re_your_resend_key"
 NOTIFICATION_EMAIL="ops@example.com"
+HOST="localhost"
 PORT="3001"
 ```
 
@@ -65,6 +66,7 @@ Notes:
 
 - `SHIPYARD_PIN` is the PIN used on the login screen.
 - `RESEND_API_KEY` and `NOTIFICATION_EMAIL` are required because deploy results are emailed after scripts finish.
+- `HOST` defaults to `localhost`. Use `0.0.0.0` only when the API must be reachable directly from outside the server.
 - `PORT` defaults to `3001` if omitted.
 
 ## 3. Configure The Web App
