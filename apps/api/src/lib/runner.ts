@@ -1,4 +1,7 @@
-﻿import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
+import path from "node:path";
 import { appById } from "../apps.config.js";
 import { prisma } from "./prisma.js";
 import { sendDeployNotification } from "./resend.js";
@@ -18,6 +21,18 @@ type RunningDeploy = {
 };
 
 const runningDeploys = new Map<string, RunningDeploy>();
+
+function resolveScriptPath(scriptPath: string) {
+  if (scriptPath === "~") {
+    return homedir();
+  }
+
+  if (scriptPath.startsWith("~/")) {
+    return path.join(homedir(), scriptPath.slice(2));
+  }
+
+  return scriptPath;
+}
 
 function emit(deployId: string, event: RunnerEvent) {
   const runningDeploy = runningDeploys.get(deployId);
@@ -42,7 +57,8 @@ export function startDeploy(params: {
   deployId: string;
   scriptPath: string;
 }) {
-  const child = spawn(params.scriptPath, [], {
+  const scriptPath = resolveScriptPath(params.scriptPath);
+  const child = spawn(scriptPath, [], {
     shell: false,
     windowsHide: true,
   });
@@ -59,11 +75,21 @@ export function startDeploy(params: {
     completion,
   });
 
+  if (!existsSync(scriptPath)) {
+    appendLog(
+      params.deployId,
+      Buffer.from(`Deploy script not found: ${scriptPath}\n`),
+    );
+  }
+
   child.stdout.on("data", (chunk: Buffer) => appendLog(params.deployId, chunk));
   child.stderr.on("data", (chunk: Buffer) => appendLog(params.deployId, chunk));
 
   child.on("error", (error) => {
-    appendLog(params.deployId, Buffer.from(`Failed to start deploy script: ${error.message}\n`));
+    appendLog(
+      params.deployId,
+      Buffer.from(`Failed to start deploy script: ${error.message}\n`),
+    );
   });
 
   child.on("close", async (code) => {

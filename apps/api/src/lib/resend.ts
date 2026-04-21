@@ -21,7 +21,7 @@ export async function sendDeployNotification(params: {
   const timestamp = new Date().toISOString();
 
   await resend.emails.send({
-    from: "Shipyard <onboarding@resend.dev>",
+    from: env.RESEND_FROM,
     to: env.NOTIFICATION_EMAIL,
     subject: `[Shipyard] ${params.appLabel} deploy ${params.status}`,
     text: [

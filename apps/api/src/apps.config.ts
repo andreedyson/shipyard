@@ -2,9 +2,9 @@
 
 export const apps = [
   {
-    id: "lms-frontend",
-    label: "LMS Frontend",
-    scriptPath: "/home/user/scripts/deploy-lms-frontend.sh",
+    id: "example-web",
+    label: "Example Web",
+    scriptPath: "/home/deploy/scripts/deploy-example-web.sh",
   },
 ] satisfies AppDefinition[];
 

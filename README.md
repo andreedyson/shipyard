@@ -44,7 +44,7 @@ Important files:
 ## 1. Clone And Install
 
 ```bash
-git clone <your-repo-url> shipyard
+git clone https://github.com/your-org/shipyard.git shipyard
 cd shipyard
 pnpm install
 ```
@@ -57,6 +57,7 @@ Create `apps/api/.env`:
 DATABASE_URL="postgresql://shipyard:your-password@localhost:5432/shipyard"
 SHIPYARD_PIN="change-this-pin"
 RESEND_API_KEY="re_your_resend_key"
+RESEND_FROM="Shipyard <onboarding@resend.dev>"
 NOTIFICATION_EMAIL="ops@example.com"
 HOST="localhost"
 PORT="3001"
@@ -65,7 +66,7 @@ PORT="3001"
 Notes:
 
 - `SHIPYARD_PIN` is the PIN used on the login screen.
-- `RESEND_API_KEY` and `NOTIFICATION_EMAIL` are required because deploy results are emailed after scripts finish.
+- `RESEND_API_KEY`, `RESEND_FROM`, and `NOTIFICATION_EMAIL` configure deploy result emails.
 - `HOST` defaults to `localhost`. Use `0.0.0.0` only when the API must be reachable directly from outside the server.
 - `PORT` defaults to `3001` if omitted.
 
@@ -130,9 +131,9 @@ Edit `apps/api/src/apps.config.ts`:
 ```ts
 export const apps = [
   {
-    id: "lms-frontend",
-    label: "LMS Frontend",
-    scriptPath: "/home/deploy/scripts/deploy-lms-frontend.sh",
+    id: "example-web",
+    label: "Example Web",
+    scriptPath: "/home/deploy/scripts/deploy-example-web.sh",
   },
 ] satisfies AppDefinition[];
 ```
@@ -145,17 +146,17 @@ Example deploy script:
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /var/www/lms-frontend
+cd /var/www/example-web
 git pull --ff-only
 pnpm install --frozen-lockfile
 pnpm build
-pm2 reload lms-frontend
+pm2 reload example-web
 ```
 
 Make it executable:
 
 ```bash
-chmod +x /home/deploy/scripts/deploy-lms-frontend.sh
+chmod +x /home/deploy/scripts/deploy-example-web.sh
 ```
 
 The API process user must be allowed to execute the script and access all files used by that script.
@@ -336,8 +337,8 @@ proxy_cache off;
 Verify the script exists, is executable, and can run as the same user as `shipyard-api`:
 
 ```bash
-ls -la /home/deploy/scripts/deploy-lms-frontend.sh
-sudo -u <api-user> /home/deploy/scripts/deploy-lms-frontend.sh
+ls -la /home/deploy/scripts/deploy-example-web.sh
+sudo -u <api-user> /home/deploy/scripts/deploy-example-web.sh
 ```
 
 ### API Cannot Connect To Database
