@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
@@ -27,7 +28,7 @@ type LogPanelProps = {
 type LogLine = {
   id: number;
   text: string;
-  kind: "normal" | "success" | "error" | "separator";
+  kind: "normal" | "success" | "error" | "warning" | "separator";
 };
 
 function getLineKind(text: string): LogLine["kind"] {
@@ -37,7 +38,16 @@ function getLineKind(text: string): LogLine["kind"] {
     return "error";
   }
 
-  if (lower.includes("success") || lower.includes("done")) {
+  if (lower.includes("warn") || lower.includes("warning")) {
+    return "warning";
+  }
+
+  if (
+    lower.includes("success") ||
+    lower.includes("done") ||
+    lower.includes("successfully") ||
+    text.includes("✓")
+  ) {
     return "success";
   }
 
@@ -129,51 +139,73 @@ export function LogPanel({
 
   return (
     <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <SheetContent className="flex w-full flex-col gap-0 border-l border-white/7 bg-[#080808] p-0 text-zinc-100 sm:max-w-2xl">
-        <SheetHeader className="flex-row items-center justify-between border-b border-white/7 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <SheetTitle className="text-sm font-medium text-foreground">
-              {appLabel}
-            </SheetTitle>
-            {status && <StatusBadge status={status} />}
-          </div>
-          <SheetDescription className="font-mono text-xs text-zinc-600">
-            {deployId ?? "-"}
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl"
+        style={{ background: "#050505", borderLeft: "0.5px solid #ffffff12" }}
+      >
+        <motion.div
+          initial={{ opacity: 0, x: 12 }}
+          animate={open ? { opacity: 1, x: 0 } : { opacity: 0, x: 12 }}
+          transition={{ duration: 0.3, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          {/* Header */}
+          <SheetHeader
+            className="flex-row items-center justify-between px-5 py-4"
+            style={{ borderBottom: "0.5px solid #ffffff10" }}
+          >
+            <div className="flex items-center gap-3">
+              <SheetTitle className="text-sm font-medium text-[#f4f4f5]">
+                {appLabel}
+              </SheetTitle>
+              {status && <StatusBadge status={status} />}
+            </div>
+            <SheetDescription className="max-w-[160px] truncate font-mono text-xs text-[#3f3f46]">
+              {deployId ?? "—"}
+            </SheetDescription>
+          </SheetHeader>
 
-        <ScrollArea className="flex-1">
-          <div className="space-y-px p-5 font-mono text-[13px] leading-[1.65]">
-            {lines.length === 0 ? (
-              <p className="text-zinc-600">Waiting for log output...</p>
-            ) : null}
+          {/* Log output */}
+          <ScrollArea className="flex-1">
+            <div className="space-y-px p-5 font-mono text-[12px] leading-[1.8] text-[#71717a]">
+              {lines.length === 0 ? (
+                <p className="text-[#3f3f46]">Waiting for log output...</p>
+              ) : null}
 
-            {lines.map((line) =>
-              line.kind === "separator" ? (
-                <div key={line.id} className="flex items-center gap-3 py-4">
-                  <Separator className="flex-1 bg-white/7" />
-                  <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-zinc-600">
+              {lines.map((line) =>
+                line.kind === "separator" ? (
+                  <div key={line.id} className="flex items-center gap-3 py-4">
+                    <Separator
+                      className="flex-1"
+                      style={{ background: "#ffffff10" }}
+                    />
+                    <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#3f3f46]">
+                      {line.text}
+                    </span>
+                    <Separator
+                      className="flex-1"
+                      style={{ background: "#ffffff10" }}
+                    />
+                  </div>
+                ) : (
+                  <p
+                    key={line.id}
+                    className={cn(
+                      "whitespace-pre-wrap break-words",
+                      line.kind === "normal" && "text-[#71717a]",
+                      line.kind === "error" && "text-[#f87171]",
+                      line.kind === "success" && "text-[#4ade80]",
+                      line.kind === "warning" && "text-[#fb923c]",
+                    )}
+                  >
                     {line.text}
-                  </span>
-                  <Separator className="flex-1 bg-white/7" />
-                </div>
-              ) : (
-                <p
-                  key={line.id}
-                  className={cn(
-                    "whitespace-pre-wrap break-words",
-                    line.kind === "normal" && "text-zinc-400",
-                    line.kind === "error" && "text-[#f87171]",
-                    line.kind === "success" && "text-[#4ade80]",
-                  )}
-                >
-                  {line.text}
-                </p>
-              ),
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </ScrollArea>
+                  </p>
+                ),
+              )}
+              <div ref={bottomRef} />
+            </div>
+          </ScrollArea>
+        </motion.div>
       </SheetContent>
     </Sheet>
   );

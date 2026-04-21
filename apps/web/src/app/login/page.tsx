@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ShipWheel } from "lucide-react";
+import { Anchor } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -48,32 +48,30 @@ export default function LoginPage() {
   return (
     <main className="relative grid min-h-screen place-items-center overflow-hidden px-5 py-10">
       <motion.div
-        initial={{ opacity: 0, y: 14 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-sm"
       >
         {/* Wordmark */}
-        <div className="mb-8 flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-lg border border-white/10 bg-white/6">
-            <ShipWheel className="size-5 text-white/80" />
+        <div className="mb-8 flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-[#ffffff10]">
+            <Anchor className="size-4 text-[#f4f4f5]" />
           </div>
-          <div>
-            <p className="text-sm font-semibold tracking-tight text-foreground">
-              Shipyard
-            </p>
-            <p className="font-mono text-[11px] text-muted-foreground">
-              Private console
-            </p>
-          </div>
+          <span className="text-[15px] font-semibold tracking-tight text-[#f4f4f5]">
+            Shipyard
+          </span>
         </div>
 
         {/* Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_32px_80px_-20px_rgba(0,0,0,0.9)]">
-          <h1 className="mb-1 text-xl font-semibold tracking-tight text-foreground">
+        <div
+          className="rounded-2xl p-8"
+          style={{ background: "#111111", border: "0.5px solid #ffffff15" }}
+        >
+          <h1 className="mb-1 text-xl font-semibold tracking-tight text-[#f4f4f5]">
             Enter your access PIN
           </h1>
-          <p className="mb-6 text-sm text-muted-foreground">
+          <p className="mb-6 text-sm text-[#71717a]">
             Authenticate to access the deployment dashboard.
           </p>
 
@@ -81,18 +79,18 @@ export default function LoginPage() {
             <Input
               value={pin}
               onChange={(event) => setPinInput(event.target.value)}
-              placeholder="••••••••"
+              placeholder="eyJhbGci..."
               autoComplete="current-password"
               spellCheck={false}
               type="password"
-              className="h-11 border-border bg-secondary font-mono focus-visible:ring-white/15"
+              className="h-11 border-[#ffffff15] bg-[#1a1a1a] font-mono text-[#f4f4f5] placeholder:text-[#3f3f46] focus-visible:ring-white/10"
             />
             {error ? (
-              <p className="text-sm text-red-400">{error}</p>
+              <p className="text-sm text-[#f87171]">{error}</p>
             ) : null}
             <Button
               type="submit"
-              className="h-11 w-full font-medium"
+              className="h-11 w-full bg-[#f4f4f5] text-[#0a0a0a] hover:bg-[#e4e4e7] font-medium"
               disabled={isSubmitting}
             >
               {isSubmitting ? "Verifying..." : "Enter dashboard"}
@@ -100,7 +98,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-4 text-center font-mono text-[11px] text-muted-foreground">
+        <p className="mt-4 text-center font-mono text-[11px] text-[#3f3f46]">
           Accessible only via VPN &mdash; contact your admin if you don&apos;t
           have a PIN.
         </p>
