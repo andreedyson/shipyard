@@ -139,23 +139,17 @@ function buildEmailHtml(params: {
           <tr>
             <td style="background:#18181b;border:1px solid #27272a;border-radius:12px;overflow:hidden;">
               <!-- Log header -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#1c1c1f;border-bottom:1px solid #27272a;padding:12px 20px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#1c1c1f;border-bottom:1px solid #27272a;">
                 <tr>
                   <td style="padding:12px 20px;">
                     <table cellpadding="0" cellspacing="0">
                       <tr>
-                        <td style="padding-right:8px;">
-                          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;"></span>
-                        </td>
-                        <td style="padding-right:8px;">
-                          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b;"></span>
-                        </td>
-                        <td style="padding-right:16px;">
-                          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;"></span>
+                        <td style="padding-right:10px;">
+                          <span style="font-size:13px;color:#52525b;">▸</span>
                         </td>
                         <td>
-                          <span style="font-size:11px;color:#52525b;font-family:'Courier New',monospace;">
-                            deploy.log — last 30 lines
+                          <span style="font-size:11px;color:#52525b;font-family:'Courier New',monospace;letter-spacing:0.04em;">
+                            deploy.log &nbsp;·&nbsp; last 30 lines
                           </span>
                         </td>
                       </tr>
