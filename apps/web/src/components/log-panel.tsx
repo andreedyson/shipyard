@@ -179,7 +179,7 @@ export function LogPanel({
                       className="flex-1"
                       style={{ background: "#ffffff10" }}
                     />
-                    <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#3f3f46]">
+                    <span className="font-mono text-[10px] tracking-[0.3em] text-[#3f3f46] uppercase">
                       {line.text}
                     </span>
                     <Separator
@@ -191,11 +191,11 @@ export function LogPanel({
                   <p
                     key={line.id}
                     className={cn(
-                      "whitespace-pre-wrap break-words",
+                      "break-words whitespace-pre-wrap",
                       line.kind === "normal" && "text-[#71717a]",
                       line.kind === "error" && "text-[#f87171]",
                       line.kind === "success" && "text-[#4ade80]",
-                      line.kind === "warning" && "text-[#fb923c]",
+                      line.kind === "warning" && "text-[#4ade80]",
                     )}
                   >
                     {line.text}
