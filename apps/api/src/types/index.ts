@@ -13,4 +13,5 @@ export type AppResponse = {
   label: string;
   status: AppStatus;
   lastDeployedAt: Date | null;
+  latestDeployId: string | null;
 };
