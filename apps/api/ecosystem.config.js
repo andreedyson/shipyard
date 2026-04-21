@@ -5,7 +5,7 @@
       script: "dist/index.js",
       env: {
         NODE_ENV: "production",
-        PORT: 3001,
+        PORT: 8080,
       },
     },
   ],
