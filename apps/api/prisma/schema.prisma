@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model App {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  status         String   @default("idle")
+  lastDeployedAt DateTime?
+  createdAt      DateTime @default(now())
+  deploys        Deploy[]
+}
+
+model Deploy {
+  id        String   @id @default(cuid())
+  appId     String
+  app       App      @relation(fields: [appId], references: [id])
+  status    String
+  logs      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([appId, status])
+}
