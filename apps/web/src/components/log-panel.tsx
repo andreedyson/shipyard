@@ -167,7 +167,7 @@ export function LogPanel({
 
           {/* Log output */}
           <ScrollArea className="flex-1">
-            <div className="space-y-px p-5 font-mono text-[12px] leading-[1.8] text-[#71717a]">
+            <div className="space-y-0.5 p-5 font-mono text-[12px] leading-[1.8] text-[#71717a]">
               {lines.length === 0 ? (
                 <p className="text-[#3f3f46]">Waiting for log output...</p>
               ) : null}

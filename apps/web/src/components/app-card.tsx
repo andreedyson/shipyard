@@ -66,7 +66,7 @@ export function AppCard({ app }: AppCardProps) {
 
         {/* Actions */}
         <div className="mt-5 flex items-center justify-between gap-3">
-          <DeployButton appId={app.id} status={app.status} />
+          <DeployButton appId={app.id} status={app.status} appLabel={app.label} />
           <button
             type="button"
             disabled={!latestDeployId}
