@@ -75,8 +75,8 @@ export default function DashboardPage() {
             <span className="text-sm font-semibold tracking-tight text-[#f4f4f5]">
               Shipyard
             </span>
-            <span className="rounded-full bg-[#ffffff10] px-2.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-widest text-[#71717a]">
-              VPN ONLY
+            <span className="rounded-full bg-[#ffffff10] px-2.5 py-0.5 font-mono text-[10px] font-medium tracking-widest text-[#71717a] uppercase">
+              VPN / SERVER ONLY
             </span>
           </div>
           <Button
@@ -128,7 +128,10 @@ export default function DashboardPage() {
             <div className="flex flex-col items-center gap-4 py-20 text-center">
               <div
                 className="flex size-12 items-center justify-center rounded-xl"
-                style={{ background: "#111111", border: "0.5px solid #ffffff15" }}
+                style={{
+                  background: "#111111",
+                  border: "0.5px solid #ffffff15",
+                }}
               >
                 <Box className="size-5 text-[#3f3f46]" />
               </div>

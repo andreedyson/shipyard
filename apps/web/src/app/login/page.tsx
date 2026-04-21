@@ -79,27 +79,25 @@ export default function LoginPage() {
             <Input
               value={pin}
               onChange={(event) => setPinInput(event.target.value)}
-              placeholder="eyJhbGci..."
+              placeholder="9923**"
               autoComplete="current-password"
               spellCheck={false}
               type="password"
               className="h-11 border-[#ffffff15] bg-[#1a1a1a] font-mono text-[#f4f4f5] placeholder:text-[#3f3f46] focus-visible:ring-white/10"
             />
-            {error ? (
-              <p className="text-sm text-[#f87171]">{error}</p>
-            ) : null}
+            {error ? <p className="text-sm text-[#f87171]">{error}</p> : null}
             <Button
               type="submit"
-              className="h-11 w-full bg-[#f4f4f5] text-[#0a0a0a] hover:bg-[#e4e4e7] font-medium"
+              className="h-11 w-full bg-[#f4f4f5] font-medium text-[#0a0a0a] hover:bg-[#e4e4e7]"
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Verifying..." : "Enter dashboard"}
+              {isSubmitting ? "Verifying..." : "Enter Dashboard"}
             </Button>
           </form>
         </div>
 
         <p className="mt-4 text-center font-mono text-[11px] text-[#3f3f46]">
-          Accessible only via VPN &mdash; contact your admin if you don&apos;t
+          Accessible only via VPN or server contact your admin if you don&apos;t
           have a PIN.
         </p>
       </motion.div>
