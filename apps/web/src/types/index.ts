@@ -9,6 +9,11 @@ export type Deploy = {
   createdAt?: string | null;
 };
 
+export type DeployHistoryItem = Pick<
+  Deploy,
+  "id" | "appId" | "status" | "createdAt"
+>;
+
 export type App = {
   id: string;
   label: string;

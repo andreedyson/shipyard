@@ -15,3 +15,10 @@ export type AppResponse = {
   lastDeployedAt: Date | null;
   latestDeployId: string | null;
 };
+
+export type DeployHistoryItem = {
+  id: string;
+  appId: string;
+  status: DeployStatus;
+  createdAt: Date;
+};
