@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { FileText, GitCommitHorizontal, Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
@@ -12,10 +12,26 @@ import type { App } from "@/types";
 
 type AppCardProps = {
   app: App;
+  favorite?: boolean;
+  onToggleFavorite?: () => void;
 };
 
-export function AppCard({ app }: AppCardProps) {
+export function AppCard({
+  app,
+  favorite = false,
+  onToggleFavorite,
+}: AppCardProps) {
   const [logsOpen, setLogsOpen] = useState(false);
+  const [preferredDeployId, setPreferredDeployId] = useState<string | null>(
+    null,
+  );
+  const latest = app.latestDeploy;
+  const duration =
+    latest?.durationMs == null
+      ? null
+      : latest.durationMs < 60_000
+        ? `${Math.round(latest.durationMs / 1_000)}s`
+        : `${Math.floor(latest.durationMs / 60_000)}m ${Math.round((latest.durationMs % 60_000) / 1_000)}s`;
 
   return (
     <>
@@ -27,11 +43,48 @@ export function AppCard({ app }: AppCardProps) {
       >
         {/* Top row */}
         <div className="flex items-start justify-between gap-3">
-          <h3 className="text-[15px] font-medium tracking-tight text-[#f4f4f5]">
-            {app.label}
-          </h3>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-[15px] font-medium tracking-tight text-[#f4f4f5]">
+                {app.label}
+              </h3>
+              <button
+                type="button"
+                onClick={onToggleFavorite}
+                aria-label={favorite ? "Remove favorite" : "Add favorite"}
+                className="text-[#3f3f46] hover:text-[#fbbf24]"
+              >
+                <Star
+                  className="size-3.5"
+                  fill={favorite ? "currentColor" : "none"}
+                  style={favorite ? { color: "#fbbf24" } : undefined}
+                />
+              </button>
+            </div>
+            <span className="mt-1 inline-block rounded bg-[#ffffff0a] px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-[#71717a] uppercase">
+              {app.environment}
+            </span>
+          </div>
           <StatusBadge status={app.status} />
         </div>
+
+        {latest ? (
+          <div className="mt-4 space-y-1 text-xs text-[#71717a]">
+            <div className="flex items-center gap-1.5 font-mono">
+              <GitCommitHorizontal className="size-3.5" />
+              <span>{latest.branch ?? "unknown"}</span>
+              <span className="text-[#3f3f46]">
+                {latest.revision?.slice(0, 8) ?? "no revision"}
+              </span>
+              {duration ? <span className="ml-auto">{duration}</span> : null}
+            </div>
+            {latest.failureSummary ? (
+              <p className="line-clamp-2 text-[#f87171]">
+                {latest.failureSummary}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Last deployed */}
         <div className="mt-5">
@@ -43,7 +96,15 @@ export function AppCard({ app }: AppCardProps) {
 
         {/* Actions */}
         <div className="mt-5 flex items-center justify-between gap-3">
-          <DeployButton appId={app.id} status={app.status} appLabel={app.label} />
+          <DeployButton
+            appId={app.id}
+            status={app.status}
+            appLabel={app.label}
+            onStarted={(deployId) => {
+              setPreferredDeployId(deployId);
+              setLogsOpen(true);
+            }}
+          />
           <button
             type="button"
             onClick={() => setLogsOpen(true)}
@@ -62,6 +123,8 @@ export function AppCard({ app }: AppCardProps) {
         status={app.status}
         open={logsOpen}
         onClose={() => setLogsOpen(false)}
+        preferredDeployId={preferredDeployId}
+        canRollback={app.canRollback}
       />
     </>
   );

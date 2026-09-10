@@ -6,15 +6,27 @@ import { prettyJSON } from "hono/pretty-json";
 import { env } from "./env.js";
 import routes from "./routes/index.js";
 import { cors } from "hono/cors";
+import { deploymentEngine } from "./lib/deployment-engine.js";
 
 const app = new Hono();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: env.WEB_ORIGIN,
+    credentials: true,
+    allowHeaders: ["Content-Type"],
+    allowMethods: ["GET", "POST", "OPTIONS"],
+  }),
+);
 app.use("*", logger());
 app.use("*", prettyJSON());
 
 app.get("/", (c) => c.json({ name: "shipyard-api", status: "ok" }));
 app.route("/", routes);
+
+const recovered = await deploymentEngine.recover();
+if (recovered)
+  console.warn(`Marked ${recovered} interrupted deployment(s) after restart`);
 
 serve(
   {

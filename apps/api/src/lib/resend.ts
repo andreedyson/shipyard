@@ -5,11 +5,7 @@ import type { FinalDeployStatus } from "../types/index.js";
 const resend = new Resend(env.RESEND_API_KEY);
 
 const lastLogLines = (logs: string, count = 30) =>
-  logs
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .slice(-count)
-    .join("\n");
+  logs.split(/\r?\n/).filter(Boolean).slice(-count).join("\n");
 
 function buildEmailHtml(params: {
   appLabel: string;
@@ -23,21 +19,20 @@ function buildEmailHtml(params: {
   const statusColor = isSuccess ? "#22c55e" : "#ef4444";
   const statusBg = isSuccess ? "#052e16" : "#2d0a0a";
   const statusBorder = isSuccess ? "#166534" : "#7f1d1d";
-  const statusLabel = isSuccess ? "SUCCESS" : "FAILED";
-  const statusIcon = isSuccess ? "✓" : "✗";
+  const statusLabel = params.status.replaceAll("_", " ").toUpperCase();
+  const statusIcon = isSuccess
+    ? "✓"
+    : params.status === "cancelled"
+      ? "■"
+      : "✗";
 
   const logLines = params.logSnippet
     ? params.logSnippet
         .split("\n")
         .map((line) => {
-          const isError =
-            /error|fatal|exception|traceback|failed/i.test(line);
+          const isError = /error|fatal|exception|traceback|failed/i.test(line);
           const isWarn = /warn|warning/i.test(line);
-          const color = isError
-            ? "#f87171"
-            : isWarn
-              ? "#fbbf24"
-              : "#a1a1aa";
+          const color = isError ? "#f87171" : isWarn ? "#fbbf24" : "#a1a1aa";
           return `<span style="color:${color};display:block;white-space:pre-wrap;word-break:break-all;">${escapeHtml(line)}</span>`;
         })
         .join("")
@@ -230,11 +225,13 @@ function escapeHtml(str: string): string {
 
 function formatTimestamp(iso: string): string {
   try {
-    return new Date(iso).toLocaleString("en-US", {
-      dateStyle: "medium",
-      timeStyle: "long",
-      timeZone: "UTC",
-    }) + " UTC";
+    return (
+      new Date(iso).toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "long",
+        timeZone: "UTC",
+      }) + " UTC"
+    );
   } catch {
     return iso;
   }

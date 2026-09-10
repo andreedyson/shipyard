@@ -1,28 +1,18 @@
 import axios from "axios";
 
-import { getPin, PIN_HEADER, redirectToLogin, removePin } from "@/lib/auth";
+import { redirectToLogin } from "@/lib/auth";
 
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL,
-});
-
-api.interceptors.request.use((config) => {
-  const pin = getPin();
-
-  if (pin) {
-    config.headers[PIN_HEADER] = pin;
-  }
-
-  return config;
+  withCredentials: true,
 });
 
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const isLoginRequest = error.config?.url?.includes("/auth/login");
+    const isAuthRequest = error.config?.url?.includes("/auth/");
 
-    if (error.response?.status === 401 && !isLoginRequest) {
-      removePin();
+    if (error.response?.status === 401 && !isAuthRequest) {
       redirectToLogin();
     }
 

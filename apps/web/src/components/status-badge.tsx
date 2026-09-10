@@ -12,15 +12,20 @@ const statusConfig: Record<
   DeployStatus,
   { bg: string; text: string; label: string }
 > = {
-  idle:    { bg: "#ffffff10", text: "#71717a", label: "Idle" },
-  running: { bg: "#451a03",   text: "#fb923c", label: "Running" },
-  success: { bg: "#052e16",   text: "#4ade80", label: "Success" },
-  failed:  { bg: "#450a0a",   text: "#f87171", label: "Failed" },
+  idle: { bg: "#ffffff10", text: "#71717a", label: "Idle" },
+  running: { bg: "#451a03", text: "#fb923c", label: "Running" },
+  queued: { bg: "#422006", text: "#fbbf24", label: "Queued" },
+  verifying: { bg: "#172554", text: "#60a5fa", label: "Verifying" },
+  success: { bg: "#052e16", text: "#4ade80", label: "Success" },
+  failed: { bg: "#450a0a", text: "#f87171", label: "Failed" },
+  cancelled: { bg: "#27272a", text: "#a1a1aa", label: "Cancelled" },
+  timed_out: { bg: "#450a0a", text: "#f87171", label: "Timed out" },
+  interrupted: { bg: "#450a0a", text: "#f87171", label: "Interrupted" },
 };
 
 export function StatusBadge({ status }: StatusBadgeProps) {
   const config = statusConfig[status];
-  const isRunning = status === "running";
+  const isRunning = ["queued", "running", "verifying"].includes(status);
 
   return (
     <AnimatePresence mode="wait" initial={false}>
@@ -35,7 +40,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
         <span
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5",
-            "text-[11px] font-medium uppercase tracking-[0.05em]",
+            "text-[11px] font-medium tracking-[0.05em] uppercase",
           )}
           style={{ background: config.bg, color: config.text }}
         >

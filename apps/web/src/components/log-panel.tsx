@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock3 } from "lucide-react";
+import { Clock3, Copy, Download, Search, Square, Undo2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 
@@ -14,9 +14,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { getPin, PIN_QUERY_PARAM, redirectToLogin } from "@/lib/auth";
+import { redirectToLogin } from "@/lib/auth";
 import { formatDeployTime, formatRelativeDeployTime } from "@/lib/deploys";
 import { useDeployHistory } from "@/lib/hooks/use-deploy-history";
+import { useCancelDeploy, useRollback } from "@/lib/hooks/use-deploy";
 import { cn } from "@/lib/utils";
 import type { DeployHistoryItem, DeployStatus } from "@/types";
 
@@ -26,6 +27,8 @@ type LogPanelProps = {
   status?: DeployStatus;
   open: boolean;
   onClose: () => void;
+  preferredDeployId?: string | null;
+  canRollback?: boolean;
 };
 
 type LogLine = {
@@ -84,6 +87,15 @@ function DeployHistoryButton({
           <p className="mt-1 text-xs text-[#71717a]">
             {formatRelativeDeployTime(deploy.createdAt)}
           </p>
+          <p className="mt-1 truncate font-mono text-[10px] text-[#52525b]">
+            {deploy.branch ?? "unknown"} ·{" "}
+            {deploy.revision?.slice(0, 8) ?? "no revision"}
+          </p>
+          {deploy.commitMessage ? (
+            <p className="mt-1 truncate text-[10px] text-[#52525b]">
+              {deploy.commitMessage}
+            </p>
+          ) : null}
         </div>
         <StatusBadge status={deploy.status} />
       </div>
@@ -93,21 +105,16 @@ function DeployHistoryButton({
 
 function StreamedDeployLogs({ deployId }: { deployId: string | null }) {
   const [lines, setLines] = useState<LogLine[]>([]);
+  const [autoScroll, setAutoScroll] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [lines]);
+    if (autoScroll)
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [lines, autoScroll]);
 
   useEffect(() => {
     if (!deployId) {
-      return;
-    }
-
-    const pin = getPin();
-
-    if (!pin) {
-      redirectToLogin();
       return;
     }
 
@@ -124,9 +131,9 @@ function StreamedDeployLogs({ deployId }: { deployId: string | null }) {
     }
 
     const url = new URL(`/logs/${deployId}`, baseUrl);
-    url.searchParams.set(PIN_QUERY_PARAM, pin);
-
-    const eventSource = new EventSource(url.toString());
+    const eventSource = new EventSource(url.toString(), {
+      withCredentials: true,
+    });
     let finished = false;
 
     const finishStream = () => {
@@ -151,12 +158,16 @@ function StreamedDeployLogs({ deployId }: { deployId: string | null }) {
     eventSource.onmessage = handleLog;
     eventSource.addEventListener("log", handleLog);
     eventSource.addEventListener("exit", handleExit);
+    eventSource.addEventListener("stage", (event: MessageEvent<string>) => {
+      pushLine(`Stage: ${event.data}`, "separator");
+    });
     eventSource.onerror = () => {
       if (finished || eventSource.readyState === EventSource.CLOSED) {
         finishStream();
         return;
       }
 
+      if (eventSource.readyState === EventSource.CLOSED) redirectToLogin();
       pushLine("Log stream disconnected", "error");
       eventSource.close();
     };
@@ -172,6 +183,54 @@ function StreamedDeployLogs({ deployId }: { deployId: string | null }) {
 
   return (
     <>
+      <div className="sticky top-0 z-10 mb-3 flex justify-end gap-2 bg-[#050505]/90 py-1 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setAutoScroll((value) => !value)}
+          className="rounded px-2 py-1 text-[10px] text-[#71717a] hover:bg-[#ffffff10]"
+        >
+          Auto-scroll {autoScroll ? "on" : "off"}
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void navigator.clipboard.writeText(
+              lines
+                .filter((line) => line.kind !== "separator")
+                .map((line) => line.text)
+                .join(""),
+            )
+          }
+          className="rounded p-1.5 text-[#71717a] hover:bg-[#ffffff10] hover:text-white"
+          title="Copy logs"
+        >
+          <Copy className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const blob = new Blob(
+              [
+                lines
+                  .filter((line) => line.kind !== "separator")
+                  .map((line) => line.text)
+                  .join(""),
+              ],
+              { type: "text/plain" },
+            );
+            const href = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = href;
+            anchor.download = `shipyard-${deployId}.log`;
+            anchor.click();
+            URL.revokeObjectURL(href);
+          }}
+          className="rounded p-1.5 text-[#71717a] hover:bg-[#ffffff10] hover:text-white"
+          title="Download logs"
+        >
+          <Download className="size-3.5" />
+        </button>
+      </div>
       {lines.length === 0 ? (
         <p className="text-[#3f3f46]">Waiting for log output...</p>
       ) : null}
@@ -193,7 +252,7 @@ function StreamedDeployLogs({ deployId }: { deployId: string | null }) {
               line.kind === "normal" && "text-[#71717a]",
               line.kind === "error" && "text-[#f87171]",
               line.kind === "success" && "text-[#4ade80]",
-              line.kind === "warning" && "text-[#4ade80]",
+              line.kind === "warning" && "text-[#fbbf24]",
             )}
           >
             {line.text}
@@ -211,14 +270,29 @@ export function LogPanel({
   status,
   open,
   onClose,
+  preferredDeployId,
+  canRollback = false,
 }: LogPanelProps) {
-  const [manualSelectedDeployId, setManualSelectedDeployId] = useState<string | null>(null);
+  const [manualSelectedDeployId, setManualSelectedDeployId] = useState<
+    string | null
+  >(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const history = useDeployHistory(appId, open);
+  const cancelDeploy = useCancelDeploy();
+  const rollback = useRollback();
+  const filteredHistory = history.data?.filter((deploy) => {
+    const matchesStatus =
+      statusFilter === "all" || deploy.status === statusFilter;
+    const haystack =
+      `${deploy.branch ?? ""} ${deploy.revision ?? ""} ${deploy.commitMessage ?? ""}`.toLowerCase();
+    return matchesStatus && haystack.includes(query.toLowerCase());
+  });
   const selectedDeployId =
     manualSelectedDeployId &&
     history.data?.some((deploy) => deploy.id === manualSelectedDeployId)
       ? manualSelectedDeployId
-      : history.data?.[0]?.id ?? null;
+      : (preferredDeployId ?? history.data?.[0]?.id ?? null);
 
   const selectedDeploy =
     history.data?.find((deploy) => deploy.id === selectedDeployId) ?? null;
@@ -245,6 +319,43 @@ export function LogPanel({
                 {appLabel}
               </SheetTitle>
               {selectedStatus && <StatusBadge status={selectedStatus} />}
+              {["queued", "running", "verifying"].includes(
+                selectedStatus ?? "",
+              ) && selectedDeployId ? (
+                <button
+                  type="button"
+                  disabled={cancelDeploy.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Cancel this deployment? The running process will be terminated.",
+                      )
+                    )
+                      cancelDeploy.mutate(selectedDeployId);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#ffffff15] px-2 py-1 text-[11px] text-[#f87171] hover:bg-[#450a0a]"
+                >
+                  <Square className="size-3" /> Cancel
+                </button>
+              ) : null}
+              {canRollback &&
+              !["queued", "running", "verifying"].includes(status ?? "") ? (
+                <button
+                  type="button"
+                  disabled={rollback.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Roll back to the previous successful revision?",
+                      )
+                    )
+                      rollback.mutate(appId);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-[#ffffff15] px-2 py-1 text-[11px] text-[#fbbf24] hover:bg-[#422006]"
+                >
+                  <Undo2 className="size-3" /> Rollback
+                </button>
+              ) : null}
             </div>
             <SheetDescription className="max-w-[220px] truncate font-mono text-xs text-[#3f3f46]">
               {selectedDeployId ?? "No deploy selected"}
@@ -257,10 +368,31 @@ export function LogPanel({
               style={{ borderColor: "#ffffff10" }}
             >
               <div className="px-5 py-4">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#3f3f46]">
+                <div className="flex items-center gap-2 text-xs tracking-[0.18em] text-[#3f3f46] uppercase">
                   <Clock3 className="size-3.5" />
                   Deploy history
                 </div>
+                <div className="relative mt-3">
+                  <Search className="absolute top-2 left-2 size-3.5 text-[#3f3f46]" />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Branch, commit…"
+                    className="h-8 w-full rounded-md border border-[#ffffff12] bg-[#0a0a0a] pr-2 pl-7 text-xs text-[#d4d4d8] outline-none focus:border-[#ffffff30]"
+                  />
+                </div>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className="mt-2 h-8 w-full rounded-md border border-[#ffffff12] bg-[#0a0a0a] px-2 text-xs text-[#71717a] outline-none"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="success">Success</option>
+                  <option value="failed">Failed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="timed_out">Timed out</option>
+                  <option value="interrupted">Interrupted</option>
+                </select>
               </div>
               <ScrollArea className="h-[240px] md:h-full">
                 <div className="space-y-2 px-4 pb-4">
@@ -281,7 +413,7 @@ export function LogPanel({
                       No deploy history yet.
                     </p>
                   ) : null}
-                  {history.data?.map((deploy) => (
+                  {filteredHistory?.map((deploy) => (
                     <DeployHistoryButton
                       key={deploy.id}
                       deploy={deploy}
@@ -298,16 +430,37 @@ export function LogPanel({
                 className="px-5 py-3"
                 style={{ borderBottom: "0.5px solid #ffffff10" }}
               >
-                <p className="font-mono text-xs text-[#71717a]">
-                  {selectedDeploy?.createdAt
-                    ? formatDeployTime(selectedDeploy.createdAt)
-                    : "Select a deploy to inspect logs"}
-                </p>
+                {selectedDeploy ? (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-[#71717a]">
+                    <span>{formatDeployTime(selectedDeploy.createdAt)}</span>
+                    <span>{selectedDeploy.action}</span>
+                    <span>{selectedDeploy.branch ?? "unknown branch"}</span>
+                    <span>
+                      {selectedDeploy.revision?.slice(0, 8) ?? "no revision"}
+                    </span>
+                    {selectedDeploy.durationMs != null ? (
+                      <span>
+                        {(selectedDeploy.durationMs / 1_000).toFixed(1)}s
+                      </span>
+                    ) : null}
+                    {selectedDeploy.exitCode != null ? (
+                      <span>exit {selectedDeploy.exitCode}</span>
+                    ) : null}
+                    <span>by {selectedDeploy.requestedBy}</span>
+                  </div>
+                ) : (
+                  <p className="font-mono text-xs text-[#71717a]">
+                    Select a deploy to inspect logs
+                  </p>
+                )}
               </div>
 
               <ScrollArea className="h-[420px] md:h-[calc(100vh-10rem)]">
                 <div className="space-y-0.5 p-5 font-mono text-[12px] leading-[1.8] text-[#71717a]">
-                  <StreamedDeployLogs key={selectedDeployId ?? "empty"} deployId={selectedDeployId} />
+                  <StreamedDeployLogs
+                    key={selectedDeployId ?? "empty"}
+                    deployId={selectedDeployId}
+                  />
                 </div>
               </ScrollArea>
             </div>

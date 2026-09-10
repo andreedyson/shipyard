@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertCircle, Anchor, Box } from "lucide-react";
+import { AlertCircle, Anchor, Box, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { AppCard } from "@/components/app-card";
 import { Button } from "@/components/ui/button";
-import { getPin, removePin } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { useApps } from "@/lib/hooks/use-apps";
 
 function DashboardSkeleton() {
@@ -38,30 +39,82 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const pin = useSyncExternalStore(
-    (onStoreChange) => {
-      window.addEventListener("storage", onStoreChange);
-
-      return () => window.removeEventListener("storage", onStoreChange);
-    },
-    getPin,
-    () => null,
-  );
-  const hasPin = Boolean(pin);
-  const apps = useApps({ enabled: hasPin });
+  const session = useQuery({
+    queryKey: ["session"],
+    queryFn: async () =>
+      (await api.get<{ authenticated: boolean }>("/auth/session")).data,
+    retry: false,
+  });
+  const authenticated = session.data?.authenticated === true;
+  const apps = useApps({ enabled: authenticated });
+  const [query, setQuery] = useState("");
+  const [environment, setEnvironment] = useState("all");
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!pin) {
-      router.replace("/login");
+    const stored = window.localStorage.getItem("shipyard_favorites");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as unknown;
+        if (Array.isArray(parsed)) {
+          queueMicrotask(() =>
+            setFavorites(
+              parsed.filter((item): item is string => typeof item === "string"),
+            ),
+          );
+        }
+      } catch {
+        window.localStorage.removeItem("shipyard_favorites");
+      }
     }
-  }, [router, pin]);
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
 
-  const handleLogout = () => {
-    removePin();
-    router.replace("/login");
+  const visibleApps = useMemo(
+    () =>
+      (apps.data ?? [])
+        .filter(
+          (app) => environment === "all" || app.environment === environment,
+        )
+        .filter((app) =>
+          `${app.label} ${app.id}`.toLowerCase().includes(query.toLowerCase()),
+        )
+        .sort(
+          (a, b) =>
+            Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)),
+        ),
+    [apps.data, environment, favorites, query],
+  );
+
+  const toggleFavorite = (appId: string) => {
+    setFavorites((current) => {
+      const next = current.includes(appId)
+        ? current.filter((id) => id !== appId)
+        : [...current, appId];
+      window.localStorage.setItem("shipyard_favorites", JSON.stringify(next));
+      return next;
+    });
   };
 
-  if (!hasPin) {
+  useEffect(() => {
+    if (session.data && !authenticated) {
+      router.replace("/login");
+    }
+  }, [router, session.data, authenticated]);
+
+  const handleLogout = () => {
+    void api.post("/auth/logout").finally(() => router.replace("/login"));
+  };
+
+  if (session.isLoading || !authenticated) {
     return null;
   }
 
@@ -85,7 +138,7 @@ export default function DashboardPage() {
             onClick={handleLogout}
             className="h-8 text-xs text-[#71717a] hover:bg-[#ffffff08] hover:text-[#f4f4f5]"
           >
-            Clear PIN
+            Sign out
           </Button>
         </header>
 
@@ -98,6 +151,30 @@ export default function DashboardPage() {
             Monitor apps, trigger deploys, and tail live logs from the Shipyard
             API.
           </p>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute top-2.5 left-3 size-4 text-[#3f3f46]" />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search apps…  /"
+              className="h-9 w-full rounded-lg border border-[#ffffff15] bg-[#111111] pr-3 pl-9 text-sm text-[#f4f4f5] outline-none focus:border-[#ffffff30]"
+            />
+          </div>
+          <select
+            value={environment}
+            onChange={(event) => setEnvironment(event.target.value)}
+            className="h-9 rounded-lg border border-[#ffffff15] bg-[#111111] px-3 text-sm text-[#71717a] outline-none"
+          >
+            <option value="all">All environments</option>
+            <option value="production">Production</option>
+            <option value="staging">Staging</option>
+            <option value="preview">Preview</option>
+            <option value="development">Development</option>
+          </select>
         </div>
 
         {/* Loading */}
@@ -118,10 +195,15 @@ export default function DashboardPage() {
 
         {/* App grid */}
         {apps.data ? (
-          apps.data.length > 0 ? (
+          visibleApps.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {apps.data.map((app) => (
-                <AppCard key={app.id} app={app} />
+              {visibleApps.map((app) => (
+                <AppCard
+                  key={app.id}
+                  app={app}
+                  favorite={favorites.includes(app.id)}
+                  onToggleFavorite={() => toggleFavorite(app.id)}
+                />
               ))}
             </div>
           ) : (
@@ -137,10 +219,14 @@ export default function DashboardPage() {
               </div>
               <div>
                 <h4 className="text-sm font-medium text-[#f4f4f5]">
-                  No apps configured
+                  {apps.data.length === 0
+                    ? "No apps configured"
+                    : "No matching apps"}
                 </h4>
                 <p className="mt-1 max-w-xs text-xs text-[#71717a]">
-                  Add your apps to apps.config.ts to get started.
+                  {apps.data.length === 0
+                    ? "Add your apps to apps.config.ts to get started."
+                    : "Try another search or environment filter."}
                 </p>
               </div>
             </div>

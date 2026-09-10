@@ -1,7 +1,7 @@
 ﻿import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { prisma } from "../lib/prisma.js";
-import { getRunningDeploy, subscribeToDeploy } from "../lib/runner.js";
+import { deploymentEngine } from "../lib/deployment-engine.js";
 
 const route = new Hono();
 
@@ -17,7 +17,7 @@ route.get("/:deployId", async (c) => {
   }
 
   return streamSSE(c, async (stream) => {
-    const runningDeploy = getRunningDeploy(deployId);
+    const runningDeploy = deploymentEngine.getRunning(deployId);
 
     if (!runningDeploy) {
       if (deploy.logs) {
@@ -27,21 +27,15 @@ route.get("/:deployId", async (c) => {
       return;
     }
 
-    let finalStatus = deploy.status;
-    const unsubscribe = subscribeToDeploy(deployId, async (event) => {
-      if (event.type === "exit") {
-        finalStatus = event.status;
-      }
-
+    const unsubscribe = deploymentEngine.subscribe(deployId, async (event) => {
       await stream.writeSSE({
         event: event.type,
-        data: event.type === "log" ? event.data : event.status,
+        data: event.type === "exit" ? event.status : event.data,
       });
     });
 
     await runningDeploy.completion;
     unsubscribe?.();
-    await stream.writeSSE({ event: "exit", data: finalStatus });
   });
 });
 

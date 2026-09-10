@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { getPin, setPin } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,9 +16,11 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (getPin()) {
-      router.replace("/");
-    }
+    void api
+      .get<{ authenticated: boolean }>("/auth/session")
+      .then(({ data }) => {
+        if (data.authenticated) router.replace("/");
+      });
   }, [router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -36,7 +37,6 @@ export default function LoginPage() {
 
     try {
       await api.post("/auth/login", { pin: normalizedPin });
-      setPin(normalizedPin);
       router.replace("/");
     } catch {
       setError("Invalid PIN. Please try again.");

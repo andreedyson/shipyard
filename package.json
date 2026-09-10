@@ -9,7 +9,11 @@
     "dev:api": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
     "build:api": "pnpm --filter api build",
-    "build:web": "pnpm --filter web build"
+    "build:web": "pnpm --filter web build",
+    "db:migrate:dev": "pnpm --filter api prisma:migrate:dev",
+    "db:migrate:deploy": "pnpm --filter api prisma:migrate:deploy",
+    "db:baseline:legacy": "pnpm --filter api prisma:baseline:legacy",
+    "check": "pnpm --filter api typecheck && pnpm --filter web lint && pnpm --filter web build"
   },
   "devDependencies": {
     "turbo": "^2.9.6"

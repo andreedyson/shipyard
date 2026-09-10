@@ -5,7 +5,7 @@ Shipyard is a private deployment dashboard for running server-side deploy script
 - `apps/api`: Hono API, PostgreSQL, Prisma, deploy runner, email notifications.
 - `apps/web`: Next.js dashboard UI.
 
-Authentication is intentionally simple: one shared PIN configured on the API with `SHIPYARD_PIN`. The web app validates the PIN, stores it in browser local storage, and sends it to the API on each request.
+Authentication uses one shared PIN configured with `SHIPYARD_PIN`. A successful login creates a signed, expiring HttpOnly session cookie; the PIN is never stored by the browser or placed in a log-stream URL.
 
 ## Requirements
 
@@ -56,9 +56,13 @@ Create `apps/api/.env`:
 ```env
 DATABASE_URL="postgresql://shipyard:your-password@localhost:5432/shipyard"
 SHIPYARD_PIN="change-this-pin"
+SESSION_SECRET="replace-with-at-least-32-random-characters"
 RESEND_API_KEY="re_your_resend_key"
 RESEND_FROM="Shipyard <onboarding@resend.dev>"
 NOTIFICATION_EMAIL="ops@example.com"
+WEB_ORIGIN="https://shipyard.example.com"
+SESSION_TTL_HOURS="12"
+LOG_MAX_BYTES="2000000"
 HOST="localhost"
 PORT="3001"
 ```
@@ -110,19 +114,66 @@ Then bootstrap Prisma from the repo:
 ```bash
 cd apps/api
 pnpm prisma:generate
-pnpm exec prisma db push
-pnpm prisma:seed
-cd ../..
-```
-
-This repository currently has no committed Prisma migrations, so `prisma db push` is the practical initial bootstrap command. If migrations are added later, use this for production instead:
-
-```bash
-cd apps/api
 pnpm exec prisma migrate deploy
 pnpm prisma:seed
 cd ../..
 ```
+
+The committed migration history is the source of truth. Use `migrate dev` only when authoring a future schema change locally:
+
+```bash
+cd apps/api
+pnpm exec prisma migrate dev
+cd ../..
+```
+
+### Upgrading an existing production database created with `db push`
+
+Do this once per existing database. Do not run the baseline command on a fresh, empty database.
+
+1. Back up PostgreSQL and stop the old Shipyard API so no deployment can start during the migration.
+2. Point `DATABASE_URL` at the existing production database.
+3. Confirm that no old deploy process is still running. If the old API left only stale deployments marked as running, mark those rows interrupted before adding the active-deployment constraint:
+
+   ```sql
+   UPDATE "Deploy" SET "status" = 'interrupted' WHERE "status" = 'running';
+   UPDATE "App" SET "status" = 'interrupted' WHERE "status" = 'running';
+   ```
+
+4. Record the initial migration as already applied. This creates migration history without running the `CREATE TABLE` statements against existing tables:
+
+   ```bash
+   pnpm db:baseline:legacy
+   ```
+
+5. Apply only the new lifecycle migrations and verify the result:
+
+   ```bash
+   pnpm db:migrate:deploy
+   pnpm --filter api prisma:migrate:status
+   ```
+
+6. Deploy the new API and web builds. Future releases only need `pnpm db:migrate:deploy`; never baseline this database again.
+
+The upgrade keeps all existing apps, deploy history, and logs. Users need to sign in again because authentication now uses an HttpOnly session cookie. Set `WEB_ORIGIN` to the real dashboard origin; `SESSION_SECRET` is strongly recommended but falls back to `SHIPYARD_PIN` for compatibility.
+
+### VPN-only production rollout order
+
+When the server and database are reachable only over VPN, connect the VPN first and run the migration on the server over SSH. Do not point a laptop's development `.env` at production unless you have deliberately secured and isolated that shell.
+
+```text
+Mac: connect VPN
+  → SSH to the production server
+  → back up PostgreSQL
+  → stop shipyard-api (and prevent new deploys)
+  → clean stale `running` rows if any
+  → run `pnpm db:baseline:legacy` once
+  → run `pnpm db:migrate:deploy`
+  → build API/web and restart PM2
+  → while still on VPN, check `/`, login, `/apps`, and one log stream
+```
+
+For future releases, keep the same VPN/SSH discipline but skip the baseline step. Run `pnpm db:migrate:deploy` before restarting the new API. If the dashboard is served from the same VPN IP through Nginx, set `NEXT_PUBLIC_API_URL` to that browser-reachable origin (or the proxied `/api` origin), and set API `WEB_ORIGIN` to the exact dashboard origin. Do not use `localhost` in either variable for a browser running on your Mac.
 
 ## 5. Configure Deploy Targets
 
@@ -133,12 +184,29 @@ export const apps = [
   {
     id: "example-web",
     label: "Example Web",
-    scriptPath: "/home/deploy/scripts/deploy-example-web.sh",
+    environment: "production",
+    minFreeDiskMb: 100,
+    deploy: {
+      command: "/home/deploy/scripts/deploy-example-web.sh",
+      cwd: "/var/www/example-web",
+      timeoutSeconds: 600,
+    },
+    rollback: {
+      command: "/home/deploy/scripts/rollback-example-web.sh",
+      cwd: "/var/www/example-web",
+    },
+    healthCheck: {
+      url: "https://example.com/health",
+      retries: 10,
+    },
+    notifications: {
+      on: ["success", "failed", "timed_out", "interrupted"],
+    },
   },
 ] satisfies AppDefinition[];
 ```
 
-Each item becomes one card in the dashboard. `scriptPath` must point to an executable script on the API server.
+Each command must point to an executable file on the API server. A rollback script receives its target revision in `SHIPYARD_TARGET_REVISION`; every script receives `SHIPYARD_DEPLOY_ID` and `SHIPYARD_ACTION`.
 
 Example deploy script:
 
@@ -206,7 +274,7 @@ From the repo root:
 ```bash
 pnpm install --frozen-lockfile
 pnpm --filter api prisma:generate
-pnpm --filter api exec prisma db push
+pnpm --filter api prisma:migrate:deploy
 pnpm --filter api prisma:seed
 pnpm build:api
 pnpm build:web
@@ -295,14 +363,14 @@ cd /path/to/shipyard
 git pull --ff-only
 pnpm install --frozen-lockfile
 pnpm --filter api prisma:generate
-pnpm --filter api exec prisma db push
+pnpm --filter api prisma:migrate:deploy
 pnpm build:api
 pnpm build:web
 pm2 reload shipyard-api
 pm2 reload shipyard-web
 ```
 
-If migrations are introduced later, replace `prisma db push` with `prisma migrate deploy`.
+Do not use `prisma db push` for a shared or production database; it bypasses the committed migration history.
 
 ## Troubleshooting
 

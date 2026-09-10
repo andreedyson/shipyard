@@ -8,21 +8,54 @@ datasource db {
 }
 
 model App {
-  id             String   @id @default(cuid())
-  name           String   @unique
-  status         String   @default("idle")
-  lastDeployedAt DateTime?
-  createdAt      DateTime @default(now())
-  deploys        Deploy[]
+  id              String   @id @default(cuid())
+  name            String   @unique
+  status          String   @default("idle")
+  currentRevision String?
+  previousRevision String?
+  lastDeployedAt  DateTime?
+  createdAt       DateTime @default(now())
+  deploys         Deploy[]
 }
 
 model Deploy {
-  id        String   @id @default(cuid())
-  appId     String
-  app       App      @relation(fields: [appId], references: [id])
-  status    String
-  logs      String   @default("")
-  createdAt DateTime @default(now())
+  id               String    @id @default(cuid())
+  appId            String
+  app              App       @relation(fields: [appId], references: [id])
+  status           String
+  stage            String    @default("queued")
+  action           String    @default("deploy")
+  environment      String
+  logs             String    @default("")
+  logBytes         Int       @default(0)
+  branch           String?
+  revision         String?
+  previousRevision String?
+  commitMessage    String?
+  requestedBy      String    @default("pin-user")
+  requesterIp      String?
+  exitCode         Int?
+  failureSummary   String?
+  heartbeatAt      DateTime?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  durationMs       Int?
+  cancelledAt      DateTime?
+  createdAt        DateTime  @default(now())
 
   @@index([appId, status])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  appName     String?
+  deployId    String?
+  actor       String
+  requesterIp String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
 }

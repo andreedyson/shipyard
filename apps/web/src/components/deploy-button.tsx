@@ -21,11 +21,18 @@ type DeployButtonProps = {
   appId: string;
   status: DeployStatus;
   appLabel?: string;
+  onStarted?: (deployId: string) => void;
 };
 
-export function DeployButton({ appId, status, appLabel }: DeployButtonProps) {
+export function DeployButton({
+  appId,
+  status,
+  appLabel,
+  onStarted,
+}: DeployButtonProps) {
   const deploy = useDeploy();
-  const isRunning = status === "running" || deploy.isPending;
+  const isRunning =
+    ["queued", "running", "verifying"].includes(status) || deploy.isPending;
   const [open, setOpen] = useState(false);
 
   const isRetry = status === "failed";
@@ -54,22 +61,16 @@ export function DeployButton({ appId, status, appLabel }: DeployButtonProps) {
             <AlertDialogDescription className="text-[#71717a]">
               {appLabel ? (
                 <>
-                  This will{" "}
-                  {isRetry ? "retry the deployment for" : "deploy"}{" "}
-                  <span className="font-medium text-[#f4f4f5]">
-                    {appLabel}
-                  </span>
+                  This will {isRetry ? "retry the deployment for" : "deploy"}{" "}
+                  <span className="font-medium text-[#f4f4f5]">{appLabel}</span>
                   . The process will start immediately and cannot be
                   interrupted.
                 </>
               ) : (
                 <>
                   This will{" "}
-                  {isRetry
-                    ? "retry the deployment"
-                    : "start a new deployment"}
-                  . The process will start immediately and cannot be
-                  interrupted.
+                  {isRetry ? "retry the deployment" : "start a new deployment"}.
+                  The process will start immediately and cannot be interrupted.
                 </>
               )}
             </AlertDialogDescription>
@@ -80,7 +81,11 @@ export function DeployButton({ appId, status, appLabel }: DeployButtonProps) {
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-[#f4f4f5] text-[#0a0a0a] hover:bg-[#e4e4e7]"
-              onClick={() => deploy.mutate(appId)}
+              onClick={() =>
+                deploy.mutate(appId, {
+                  onSuccess: (result) => onStarted?.(result.deployId),
+                })
+              }
             >
               {isRetry ? "Retry" : "Deploy"}
             </AlertDialogAction>
