@@ -61,6 +61,8 @@ RESEND_API_KEY="re_your_resend_key"
 RESEND_FROM="Shipyard <onboarding@resend.dev>"
 NOTIFICATION_EMAIL="ops@example.com"
 WEB_ORIGIN="https://shipyard.example.com"
+WEB_ORIGINS="https://shipyard.example.com"
+COOKIE_SECURE="true"
 SESSION_TTL_HOURS="12"
 LOG_MAX_BYTES="2000000"
 HOST="localhost"
@@ -155,7 +157,7 @@ Do this once per existing database. Do not run the baseline command on a fresh, 
 
 6. Deploy the new API and web builds. Future releases only need `pnpm db:migrate:deploy`; never baseline this database again.
 
-The upgrade keeps all existing apps, deploy history, and logs. Users need to sign in again because authentication now uses an HttpOnly session cookie. Set `WEB_ORIGIN` to the real dashboard origin; `SESSION_SECRET` is strongly recommended but falls back to `SHIPYARD_PIN` for compatibility.
+The upgrade keeps all existing apps, deploy history, and logs. Users need to sign in again because authentication now uses an HttpOnly session cookie. Set `WEB_ORIGIN` (or comma-separated `WEB_ORIGINS`) to the real dashboard origin; `SESSION_SECRET` is strongly recommended but falls back to `SHIPYARD_PIN` for compatibility. Set `COOKIE_SECURE=true` only when the dashboard is served over HTTPS.
 
 ### VPN-only production rollout order
 
@@ -173,7 +175,7 @@ Mac: connect VPN
   → while still on VPN, check `/`, login, `/apps`, and one log stream
 ```
 
-For future releases, keep the same VPN/SSH discipline but skip the baseline step. Run `pnpm db:migrate:deploy` before restarting the new API. If the dashboard is served from the same VPN IP through Nginx, set `NEXT_PUBLIC_API_URL` to that browser-reachable origin (or the proxied `/api` origin), and set API `WEB_ORIGIN` to the exact dashboard origin. Do not use `localhost` in either variable for a browser running on your Mac.
+For future releases, keep the same VPN/SSH discipline but skip the baseline step. Run `pnpm db:migrate:deploy` before restarting the new API. If the dashboard is served from the same VPN IP through Nginx, set `NEXT_PUBLIC_API_URL` to that browser-reachable origin (or the proxied `/api` origin), and set API `WEB_ORIGIN` to the exact dashboard origin. Do not use `localhost` in either variable for a browser running on your Mac. For a temporary HTTP-only VPN setup such as `http://10.8.0.1:3081`, use `WEB_ORIGIN="http://10.8.0.1:3081"` and `COOKIE_SECURE=false`; HTTPS should be the long-term setup.
 
 ## 5. Configure Deploy Targets
 

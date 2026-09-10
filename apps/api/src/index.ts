@@ -9,10 +9,16 @@ import { cors } from "hono/cors";
 import { deploymentEngine } from "./lib/deployment-engine.js";
 
 const app = new Hono();
+const allowedWebOrigins = [
+  env.WEB_ORIGIN,
+  ...(env.WEB_ORIGINS ?? "").split(","),
+]
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
-    origin: env.WEB_ORIGIN,
+    origin: (origin) => (allowedWebOrigins.includes(origin) ? origin : null),
     credentials: true,
     allowHeaders: ["Content-Type"],
     allowMethods: ["GET", "POST", "OPTIONS"],

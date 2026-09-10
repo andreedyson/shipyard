@@ -13,6 +13,14 @@ const envSchema = z.object({
     .string()
     .email("NOTIFICATION_EMAIL must be a valid email"),
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
+  WEB_ORIGINS: z.string().optional(),
+  COOKIE_SECURE: z
+    .preprocess(
+      (value) =>
+        typeof value === "string" ? value.toLowerCase() === "true" : value,
+      z.boolean(),
+    )
+    .default(process.env.NODE_ENV === "production"),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
   LOG_MAX_BYTES: z.coerce.number().int().min(1024).default(2_000_000),
   APPS_CONFIG_PATH: z.string().min(1).optional(),

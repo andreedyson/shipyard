@@ -32,7 +32,7 @@ export function createSession(c: Context) {
   setCookie(c, SESSION_COOKIE, `${encoded}.${sign(encoded)}`, {
     httpOnly: true,
     sameSite: "Lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: env.COOKIE_SECURE,
     path: "/",
     maxAge,
   });
