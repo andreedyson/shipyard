@@ -177,36 +177,25 @@ For future releases, keep the same VPN/SSH discipline but skip the baseline step
 
 ## 5. Configure Deploy Targets
 
-Edit `apps/api/src/apps.config.ts`:
+Copy `apps/api/apps.config.local.json.example` to the ignored file
+`apps/api/apps.config.local.json`, then edit that local file on each server:
 
-```ts
-export const apps = [
-  {
-    id: "example-web",
-    label: "Example Web",
-    environment: "production",
-    minFreeDiskMb: 100,
-    deploy: {
-      command: "/home/deploy/scripts/deploy-example-web.sh",
-      cwd: "/var/www/example-web",
-      timeoutSeconds: 600,
-    },
-    rollback: {
-      command: "/home/deploy/scripts/rollback-example-web.sh",
-      cwd: "/var/www/example-web",
-    },
-    healthCheck: {
-      url: "https://example.com/health",
-      retries: 10,
-    },
-    notifications: {
-      on: ["success", "failed", "timed_out", "interrupted"],
-    },
-  },
-] satisfies AppDefinition[];
+```bash
+cp apps/api/apps.config.local.json.example apps/api/apps.config.local.json
 ```
 
-Each command must point to an executable file on the API server. A rollback script receives its target revision in `SHIPYARD_TARGET_REVISION`; every script receives `SHIPYARD_DEPLOY_ID` and `SHIPYARD_ACTION`.
+The API loads that ignored JSON at startup. You can put it outside the repository and set `APPS_CONFIG_PATH` if preferred. Each command must point to an executable file on the API server. A rollback script receives its target revision in `SHIPYARD_TARGET_REVISION`; every script receives `SHIPYARD_DEPLOY_ID` and `SHIPYARD_ACTION`.
+
+If an existing server currently has local edits to the tracked `src/apps.config.ts`, migrate those values once before pulling this version:
+
+```bash
+cp apps/api/src/apps.config.ts /tmp/shipyard-apps.config.ts.backup
+git stash push -m "save server deploy targets before config split" -- apps/api/src/apps.config.ts
+git pull --ff-only
+cp apps/api/apps.config.local.json.example apps/api/apps.config.local.json
+```
+
+Copy the real commands, working directories, and health-check URLs from `/tmp/shipyard-apps.config.ts.backup` into `apps.config.local.json`. Do not run `git stash pop`; the tracked TypeScript file is now the shared loader and should stay identical across servers. Keep the stash as a rollback until the new API has started successfully.
 
 Example deploy script:
 

@@ -31,6 +31,10 @@ prisma/generated/
 !.env.example
 !**/.env.example
 
+# Server-specific deploy targets (keep outside version control)
+apps/api/apps.config.local.json
+apps/api/apps.config.local.*.json
+
 # Logs
 logs/
 *.log

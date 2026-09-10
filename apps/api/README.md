@@ -28,6 +28,8 @@ PORT="3001"
 
 Protected routes, including SSE logs, use that cookie. Cross-origin browser calls must send credentials and originate from `WEB_ORIGIN`.
 
+Deploy targets are server-local. Copy `apps.config.local.json.example` to the ignored `apps.config.local.json` (or set `APPS_CONFIG_PATH`) and keep production paths there; do not edit the tracked TypeScript loader. This prevents `git pull` from being blocked by server-specific paths.
+
 ## Routes
 
 - `GET /` health check

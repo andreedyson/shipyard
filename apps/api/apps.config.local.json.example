@@ -1,0 +1,26 @@
+[
+  {
+    "id": "my-production-app",
+    "label": "My Production App",
+    "environment": "production",
+    "minFreeDiskMb": 500,
+    "deploy": {
+      "command": "/home/deploy/scripts/deploy-my-app.sh",
+      "cwd": "/var/www/my-app",
+      "timeoutSeconds": 600
+    },
+    "rollback": {
+      "command": "/home/deploy/scripts/rollback-my-app.sh",
+      "cwd": "/var/www/my-app"
+    },
+    "healthCheck": {
+      "url": "https://my-app.example.com/health",
+      "retries": 10,
+      "intervalMs": 3000,
+      "timeoutMs": 5000
+    },
+    "notifications": {
+      "on": ["success", "failed", "timed_out", "interrupted"]
+    }
+  }
+]
