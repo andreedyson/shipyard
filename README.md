@@ -281,6 +281,8 @@ pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
+The PM2 configs pin each process's working directory to its own app folder, so `dotenv/config` consistently loads `apps/api/.env` even when PM2 is started from the repository root.
+
 Enable PM2 startup after reboot:
 
 ```bash
