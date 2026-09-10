@@ -31,6 +31,8 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
         key={status}
+        role="status"
+        aria-live="polite"
         initial={{ opacity: 0, scale: 0.88 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.92 }}

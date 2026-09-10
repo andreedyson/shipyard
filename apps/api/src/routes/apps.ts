@@ -22,6 +22,7 @@ route.get("/", async (c) => {
           id: true,
           appId: true,
           status: true,
+          stage: true,
           action: true,
           environment: true,
           branch: true,
@@ -33,6 +34,7 @@ route.get("/", async (c) => {
           failureSummary: true,
           startedAt: true,
           finishedAt: true,
+          heartbeatAt: true,
           durationMs: true,
           createdAt: true,
         },
@@ -56,10 +58,12 @@ route.get("/", async (c) => {
         ? {
             ...appRecord.deploys[0],
             status: appRecord.deploys[0].status as DeployHistoryItem["status"],
+            stage: appRecord.deploys[0].stage as DeployHistoryItem["stage"],
             action: appRecord.deploys[0].action as "deploy" | "rollback",
           }
         : null,
       canRollback: Boolean(app.rollback && appRecord?.previousRevision),
+      healthCheckConfigured: Boolean(app.healthCheck),
     };
   });
 

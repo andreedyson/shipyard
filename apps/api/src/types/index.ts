@@ -40,6 +40,7 @@ export type DeployHistoryItem = {
   id: string;
   appId: string;
   status: DeployStatus;
+  stage: DeployStatus;
   action: DeployAction;
   environment: string;
   branch: string | null;
@@ -51,6 +52,7 @@ export type DeployHistoryItem = {
   failureSummary: string | null;
   startedAt: Date | null;
   finishedAt: Date | null;
+  heartbeatAt: Date | null;
   durationMs: number | null;
   createdAt: Date;
 };
@@ -64,4 +66,5 @@ export type AppResponse = {
   currentRevision: string | null;
   latestDeploy: DeployHistoryItem | null;
   canRollback: boolean;
+  healthCheckConfigured: boolean;
 };

@@ -13,6 +13,7 @@ export type Deploy = {
   id: string;
   appId: string;
   status: DeployStatus;
+  stage: DeployStatus;
   action: "deploy" | "rollback";
   environment: string;
   branch: string | null;
@@ -24,6 +25,7 @@ export type Deploy = {
   failureSummary: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  heartbeatAt: string | null;
   durationMs: number | null;
   createdAt: string;
 };
@@ -39,4 +41,15 @@ export type App = {
   currentRevision: string | null;
   latestDeploy: Deploy | null;
   canRollback: boolean;
+  healthCheckConfigured: boolean;
+};
+
+export type AuditLogEntry = {
+  id: string;
+  action: string;
+  appName: string | null;
+  deployId: string | null;
+  actor: string;
+  requesterIp?: string | null;
+  createdAt: string;
 };

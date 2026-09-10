@@ -15,8 +15,6 @@ import {
   Layers,
   Maximize2,
   Minimize2,
-  Play,
-  RotateCcw,
   Search,
   Square,
   Terminal,
@@ -25,7 +23,6 @@ import {
   User,
   WrapText,
   X,
-  XCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -33,7 +30,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnsiRenderer, stripAnsi } from "@/lib/ansi";
 import { StatusBadge } from "@/components/status-badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -42,6 +38,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { redirectToLogin } from "@/lib/auth";
+import { useCurrentTime } from "@/hooks/use-current-time";
 import { formatDeployTime, formatRelativeDeployTime } from "@/lib/deploys";
 import { useDeployHistory } from "@/lib/hooks/use-deploy-history";
 import { useCancelDeploy, useRollback } from "@/lib/hooks/use-deploy";
@@ -56,6 +53,7 @@ type LogPanelProps = {
   onClose: () => void;
   preferredDeployId?: string | null;
   canRollback?: boolean;
+  currentRevision?: string | null;
 };
 
 type LogLine = {
@@ -187,15 +185,13 @@ function DeployHistoryButton({
 
 function StreamedDeployLogs({
   deployId,
-  status,
   appLabel,
 }: {
   deployId: string | null;
-  status?: DeployStatus;
   appLabel: string;
 }) {
   const [lines, setLines] = useState<LogLine[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState<
@@ -209,6 +205,8 @@ function StreamedDeployLogs({
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const sequenceRef = useRef(0);
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+  const showStreaming = isStreaming && Boolean(baseUrl);
 
   // Auto-scroll handler
   useEffect(() => {
@@ -223,16 +221,10 @@ function StreamedDeployLogs({
   // Connect to SSE stream
   useEffect(() => {
     if (!deployId) {
-      setLines([]);
-      setIsStreaming(false);
       return;
     }
 
-    setLines([]);
-    setIsStreaming(true);
     sequenceRef.current = 0;
-
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
 
     const addLines = (
       rawText: string,
@@ -271,7 +263,6 @@ function StreamedDeployLogs({
 
     if (!baseUrl) {
       addLines("Missing NEXT_PUBLIC_API_URL configuration", "error");
-      setIsStreaming(false);
       return;
     }
 
@@ -331,7 +322,7 @@ function StreamedDeployLogs({
       eventSource.close();
       setIsStreaming(false);
     };
-  }, [deployId]);
+  }, [baseUrl, deployId]);
 
   // Track scroll position to know if user scrolled away from bottom
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -355,10 +346,7 @@ function StreamedDeployLogs({
       // Level filter
       if (levelFilter === "error" && line.kind !== "error") return false;
       if (levelFilter === "warning" && line.kind !== "warning") return false;
-      if (
-        levelFilter === "info" &&
-        ["error", "warning"].includes(line.kind)
-      ) {
+      if (levelFilter === "info" && ["error", "warning"].includes(line.kind)) {
         return false;
       }
 
@@ -398,9 +386,7 @@ function StreamedDeployLogs({
   };
 
   const handleDownloadLogs = () => {
-    const textToDownload = lines
-      .map((l) => l.clean || l.raw)
-      .join("\n");
+    const textToDownload = lines.map((l) => l.clean || l.raw).join("\n");
     const blob = new Blob([textToDownload], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -452,7 +438,7 @@ function StreamedDeployLogs({
 
         {/* Right: Live Stream status */}
         <div className="flex items-center gap-2">
-          {isStreaming ? (
+          {showStreaming ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/80 px-2.5 py-0.5 text-[10px] font-semibold tracking-wider text-emerald-400 uppercase ring-1 ring-emerald-500/30">
               <span className="relative flex size-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -472,20 +458,21 @@ function StreamedDeployLogs({
       {/* Terminal Toolbar: Search, Filters & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] bg-[#090a0f] px-4 py-2 text-xs">
         {/* Search & Level Filters */}
-        <div className="flex flex-1 flex-wrap items-center gap-2 min-w-[240px]">
+        <div className="flex min-w-[240px] flex-1 flex-wrap items-center gap-2">
           {/* Search Input */}
-          <div className="relative min-w-[180px] max-w-xs flex-1">
+          <div className="relative max-w-xs min-w-[180px] flex-1">
             <Search className="absolute top-2 left-2.5 size-3.5 text-zinc-500" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search in logs..."
-              className="h-7.5 w-full rounded-md border border-white/10 bg-zinc-900/90 pr-7 pl-8 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-sky-500/60 focus:outline-none focus:ring-1 focus:ring-sky-500/40"
+              className="h-7.5 w-full rounded-md border border-white/10 bg-zinc-900/90 pr-7 pl-8 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/40 focus:outline-none"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
+                aria-label="Clear log search"
                 className="absolute top-2 right-2 text-zinc-500 hover:text-zinc-300"
               >
                 <X className="size-3.5" />
@@ -542,6 +529,7 @@ function StreamedDeployLogs({
           <button
             type="button"
             onClick={() => setShowLineNumbers((v) => !v)}
+            aria-pressed={showLineNumbers}
             className={cn(
               "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
               showLineNumbers
@@ -551,13 +539,14 @@ function StreamedDeployLogs({
             title="Toggle line numbers"
           >
             <span className="font-mono text-[10px]">#</span>
-            <span className="hidden sm:inline text-[10px]">Lines</span>
+            <span className="hidden text-[10px] sm:inline">Lines</span>
           </button>
 
           {/* Wrap Lines Toggle */}
           <button
             type="button"
             onClick={() => setWrapLines((v) => !v)}
+            aria-pressed={wrapLines}
             className={cn(
               "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
               wrapLines
@@ -567,13 +556,14 @@ function StreamedDeployLogs({
             title="Toggle word wrap"
           >
             <WrapText className="size-3" />
-            <span className="hidden sm:inline text-[10px]">Wrap</span>
+            <span className="hidden text-[10px] sm:inline">Wrap</span>
           </button>
 
           {/* Auto-scroll Toggle */}
           <button
             type="button"
             onClick={() => setAutoScroll((v) => !v)}
+            aria-pressed={autoScroll}
             className={cn(
               "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
               autoScroll
@@ -592,6 +582,7 @@ function StreamedDeployLogs({
           <button
             type="button"
             onClick={handleCopyLogs}
+            aria-label="Copy deployment logs"
             className="flex items-center gap-1 rounded-md bg-zinc-900/90 px-2 py-1 text-[10px] font-medium text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-zinc-800 hover:text-white"
             title="Copy logs to clipboard"
           >
@@ -612,6 +603,7 @@ function StreamedDeployLogs({
           <button
             type="button"
             onClick={handleDownloadLogs}
+            aria-label="Download deployment logs"
             className="rounded-md bg-zinc-900/90 p-1 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-zinc-800 hover:text-white"
             title="Download log file (.log)"
           >
@@ -622,6 +614,7 @@ function StreamedDeployLogs({
           <button
             type="button"
             onClick={handleClearView}
+            aria-label="Clear log view"
             className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-zinc-300"
             title="Clear display"
           >
@@ -644,7 +637,7 @@ function StreamedDeployLogs({
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="relative mb-3 flex size-10 items-center justify-center rounded-xl bg-zinc-900/90 ring-1 ring-white/10">
                 <Terminal className="size-5 text-sky-400" />
-                {isStreaming && (
+                {showStreaming && (
                   <span className="absolute -top-1 -right-1 flex size-3">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
                     <span className="relative inline-flex size-3 rounded-full bg-sky-500" />
@@ -652,7 +645,7 @@ function StreamedDeployLogs({
                 )}
               </div>
               <p className="text-xs font-medium text-zinc-300">
-                {isStreaming
+                {showStreaming
                   ? "Connecting to deployment log stream..."
                   : "Waiting for logs..."}
               </p>
@@ -697,16 +690,15 @@ function StreamedDeployLogs({
                 className={cn(
                   "group flex items-start rounded-xs transition-colors hover:bg-white/[0.03]",
                   line.kind === "error" &&
-                    "bg-red-500/[0.08] text-red-300 border-l-2 border-red-500/80 pl-1",
+                    "border-l-2 border-red-500/80 bg-red-500/[0.08] pl-1 text-red-300",
                   line.kind === "warning" &&
-                    "bg-amber-500/[0.08] text-amber-300 border-l-2 border-amber-500/80 pl-1",
-                  line.kind === "success" &&
-                    "text-emerald-300",
+                    "border-l-2 border-amber-500/80 bg-amber-500/[0.08] pl-1 text-amber-300",
+                  line.kind === "success" && "text-emerald-300",
                 )}
               >
                 {/* Line number */}
                 {showLineNumbers && (
-                  <span className="mr-3 w-8 shrink-0 select-none text-right font-mono text-[10.5px] text-zinc-600 group-hover:text-zinc-400">
+                  <span className="mr-3 w-8 shrink-0 text-right font-mono text-[10.5px] text-zinc-600 select-none group-hover:text-zinc-400">
                     {idx + 1}
                   </span>
                 )}
@@ -715,23 +707,22 @@ function StreamedDeployLogs({
                 <div
                   className={cn(
                     "min-w-0 flex-1",
-                    wrapLines ? "break-words whitespace-pre-wrap" : "whitespace-pre",
+                    wrapLines
+                      ? "break-words whitespace-pre-wrap"
+                      : "whitespace-pre",
                   )}
                 >
-                  <AnsiRenderer
-                    text={line.raw}
-                    searchQuery={searchQuery}
-                  />
+                  <AnsiRenderer text={line.raw} searchQuery={searchQuery} />
                 </div>
               </div>
             );
           })}
 
           {/* Active Blinking Cursor while streaming */}
-          {isStreaming && (
+          {showStreaming && (
             <div className="mt-2 flex items-center gap-2 text-zinc-500">
               {showLineNumbers && (
-                <span className="w-8 select-none text-right font-mono text-[10.5px] text-zinc-700">
+                <span className="w-8 text-right font-mono text-[10.5px] text-zinc-700 select-none">
                   {filteredLines.length + 1}
                 </span>
               )}
@@ -754,16 +745,149 @@ function StreamedDeployLogs({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }}
             onClick={scrollToBottom}
-            className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 font-mono text-[11px] font-medium text-white shadow-lg shadow-sky-950/80 ring-1 ring-sky-400/40 hover:bg-sky-500"
+            className="absolute right-6 bottom-4 z-20 flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 font-mono text-[11px] font-medium text-white shadow-lg ring-1 shadow-sky-950/80 ring-sky-400/40 hover:bg-sky-500"
           >
             <ArrowDown className="size-3.5" />
             <span>Jump to latest</span>
-            {isStreaming && (
+            {showStreaming && (
               <span className="size-1.5 animate-ping rounded-full bg-white" />
             )}
           </motion.button>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function DeploymentOverview({
+  deploy,
+  currentRevision,
+}: {
+  deploy: DeployHistoryItem | null;
+  currentRevision?: string | null;
+}) {
+  const isActive = deploy
+    ? ["queued", "running", "verifying"].includes(deploy.status)
+    : false;
+  const now = useCurrentTime(isActive);
+
+  if (!deploy) {
+    return (
+      <div className="border-b border-white/[0.08] bg-[#0c0d12]/60 px-4 py-4 text-xs text-zinc-500">
+        Select a deployment to inspect its overview and logs.
+      </div>
+    );
+  }
+
+  const isFailure = [
+    "failed",
+    "timed_out",
+    "interrupted",
+    "cancelled",
+  ].includes(deploy.status);
+  const duration =
+    deploy.durationMs ??
+    (isActive && deploy.startedAt && now > 0
+      ? Math.max(0, now - new Date(deploy.startedAt).getTime())
+      : null);
+  const stageLabel = {
+    queued: "Queued",
+    running: "Deploying",
+    verifying: "Verifying health",
+    success: "Live",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    timed_out: "Timed out",
+    interrupted: "Interrupted",
+    idle: "Idle",
+  }[deploy.stage ?? deploy.status];
+
+  return (
+    <div className="border-b border-white/[0.08] bg-[#0c0d12]/60 px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold tracking-[0.16em] text-zinc-500 uppercase">
+            Deployment overview
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-zinc-100">
+              {deploy.action === "rollback" ? "Rollback" : "Deploy"}
+            </span>
+            <span className="text-xs text-zinc-500">·</span>
+            <span className="text-xs text-zinc-400">{stageLabel}</span>
+            {deploy.environment ? (
+              <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+                {deploy.environment}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <StatusBadge status={deploy.status} />
+      </div>
+
+      {deploy.commitMessage ? (
+        <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-zinc-300">
+          “{deploy.commitMessage}”
+        </p>
+      ) : null}
+
+      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-[11px] sm:grid-cols-4">
+        <div>
+          <p className="text-zinc-600">Branch</p>
+          <p className="mt-1 flex items-center gap-1 truncate font-mono text-zinc-300">
+            <GitBranch className="size-3 text-sky-400" />
+            {deploy.branch ?? "unknown"}
+          </p>
+        </div>
+        <div>
+          <p className="text-zinc-600">Revision</p>
+          <p className="mt-1 flex items-center gap-1 font-mono text-zinc-300">
+            <GitCommitHorizontal className="size-3 text-zinc-500" />
+            {deploy.revision?.slice(0, 8) ?? "unknown"}
+          </p>
+        </div>
+        <div>
+          <p className="text-zinc-600">Duration</p>
+          <p className="mt-1 font-mono text-zinc-300">
+            {duration == null
+              ? "—"
+              : `${(duration / 1000).toFixed(1)}s${isActive ? " elapsed" : ""}`}
+          </p>
+        </div>
+        <div>
+          <p className="text-zinc-600">Requested by</p>
+          <p className="mt-1 flex items-center gap-1 truncate text-zinc-300">
+            <User className="size-3 text-zinc-500" />
+            {deploy.requestedBy}
+          </p>
+        </div>
+      </div>
+
+      {currentRevision && deploy.status === "success" ? (
+        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-emerald-300">
+          <CheckCircle2 className="size-3.5" />
+          Live revision is {currentRevision.slice(0, 8)}
+        </p>
+      ) : null}
+      {deploy.status === "verifying" ? (
+        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-sky-300">
+          <Clock3 className="size-3.5" />
+          Health check is running; the deployment will be marked live when it
+          passes.
+        </p>
+      ) : null}
+      {isFailure && deploy.failureSummary ? (
+        <div className="mt-3 rounded-lg border border-red-500/20 bg-red-950/30 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-red-300 uppercase">
+            <AlertCircle className="size-3" />
+            Failure summary
+            {deploy.exitCode != null ? ` · exit ${deploy.exitCode}` : ""}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-red-200/80">
+            {deploy.failureSummary}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -776,6 +900,7 @@ export function LogPanel({
   onClose,
   preferredDeployId,
   canRollback = false,
+  currentRevision,
 }: LogPanelProps) {
   const [manualSelectedDeployId, setManualSelectedDeployId] = useState<
     string | null
@@ -849,6 +974,7 @@ export function LogPanel({
                 <button
                   type="button"
                   disabled={cancelDeploy.isPending}
+                  aria-label="Cancel active deployment"
                   onClick={() => {
                     if (
                       window.confirm(
@@ -866,14 +992,25 @@ export function LogPanel({
               ) : null}
 
               {canRollback &&
-              !["queued", "running", "verifying"].includes(status ?? "") ? (
+              !["queued", "running", "verifying"].includes(
+                selectedStatus ?? "",
+              ) ? (
                 <button
                   type="button"
                   disabled={rollback.isPending}
+                  aria-label="Rollback to previous successful revision"
                   onClick={() => {
                     if (
                       window.confirm(
-                        "Roll back to the previous successful revision?",
+                        "Roll back to revision " +
+                          (
+                            selectedDeploy?.previousRevision ??
+                            "previous successful revision"
+                          ).slice(0, 8) +
+                          (currentRevision
+                            ? " from " + currentRevision.slice(0, 8)
+                            : "") +
+                          "? The current live revision may be replaced.",
                       )
                     ) {
                       rollback.mutate(appId);
@@ -893,6 +1030,11 @@ export function LogPanel({
               <button
                 type="button"
                 onClick={() => setIsExpanded((v) => !v)}
+                aria-label={
+                  isExpanded
+                    ? "Collapse deployment details"
+                    : "Expand deployment details"
+                }
                 className="hidden rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white sm:block"
                 title={isExpanded ? "Collapse width" : "Expand width"}
               >
@@ -938,7 +1080,7 @@ export function LogPanel({
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search commits, branches..."
-                    className="h-8 w-full rounded-lg border border-white/10 bg-zinc-950/80 pr-2 pl-8 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-white/25 focus:outline-none focus:ring-1 focus:ring-white/20"
+                    className="h-8 w-full rounded-lg border border-white/10 bg-zinc-950/80 pr-2 pl-8 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-white/25 focus:ring-1 focus:ring-white/20 focus:outline-none"
                   />
                   {query && (
                     <button
@@ -951,7 +1093,11 @@ export function LogPanel({
                   )}
                 </div>
 
+                <label className="sr-only" htmlFor={`history-status-${appId}`}>
+                  Filter deployment history by status
+                </label>
                 <select
+                  id={`history-status-${appId}`}
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value)}
                   className="mt-2 h-8 w-full rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 text-xs text-zinc-300 outline-none focus:border-white/25"
@@ -960,7 +1106,9 @@ export function LogPanel({
                   <option value="success">Success</option>
                   <option value="failed">Failed</option>
                   <option value="cancelled">Cancelled</option>
+                  <option value="queued">Queued</option>
                   <option value="running">Running</option>
+                  <option value="verifying">Verifying</option>
                   <option value="timed_out">Timed out</option>
                   <option value="interrupted">Interrupted</option>
                 </select>
@@ -1009,6 +1157,10 @@ export function LogPanel({
 
             {/* Right: Selected Deploy Metadata Banner & Stream Terminal */}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#07080b]">
+              <DeploymentOverview
+                deploy={selectedDeploy}
+                currentRevision={currentRevision}
+              />
               {/* Deploy Metadata Banner */}
               <div className="border-b border-white/[0.08] bg-[#0c0d12]/60 px-4 py-2.5">
                 {selectedDeploy ? (
@@ -1066,7 +1218,6 @@ export function LogPanel({
                 <StreamedDeployLogs
                   key={selectedDeployId ?? "empty"}
                   deployId={selectedDeployId}
-                  status={selectedStatus}
                   appLabel={appLabel}
                 />
               </div>

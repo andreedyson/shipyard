@@ -57,6 +57,7 @@ route.get("/:appId/history", async (c) => {
       id: true,
       appId: true,
       status: true,
+      stage: true,
       action: true,
       environment: true,
       branch: true,
@@ -68,6 +69,7 @@ route.get("/:appId/history", async (c) => {
       failureSummary: true,
       startedAt: true,
       finishedAt: true,
+      heartbeatAt: true,
       durationMs: true,
       createdAt: true,
     },
@@ -77,6 +79,7 @@ route.get("/:appId/history", async (c) => {
     deploys.map((deploy) => ({
       ...deploy,
       status: deploy.status as DeployHistoryItem["status"],
+      stage: deploy.stage as DeployHistoryItem["stage"],
       action: deploy.action as DeployHistoryItem["action"],
     })),
   );

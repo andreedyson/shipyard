@@ -76,7 +76,11 @@ export default function LoginPage() {
           </p>
 
           <form className="space-y-3" onSubmit={handleSubmit}>
+            <label className="sr-only" htmlFor="access-pin">
+              Access PIN
+            </label>
             <Input
+              id="access-pin"
               value={pin}
               onChange={(event) => setPinInput(event.target.value)}
               placeholder="9923**"
@@ -97,8 +101,8 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-4 text-center font-mono text-[11px] text-[#3f3f46]">
-          Accessible only via VPN or server contact your admin if you don&apos;t
-          have a PIN.
+          Accessible only via VPN or server. Contact your admin if you
+          don&apos;t have a PIN.
         </p>
       </motion.div>
     </main>
