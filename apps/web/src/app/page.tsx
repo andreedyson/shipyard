@@ -6,19 +6,18 @@ import {
   Anchor,
   CheckCircle2,
   CloudOff,
-  Layers,
   RefreshCw,
   Search,
   Server,
   XCircle,
   Zap,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppCard } from "@/components/app-card";
 import { Button } from "@/components/ui/button";
+import { redirectToLogin } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { formatRelativeDeployTime } from "@/lib/deploys";
 import { useApps } from "@/lib/hooks/use-apps";
@@ -243,7 +242,6 @@ function ActivityPanel({
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const session = useQuery({
     queryKey: ["session"],
     queryFn: async () =>
@@ -343,12 +341,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (session.data && !authenticated) {
-      router.replace("/login");
+      redirectToLogin();
     }
-  }, [router, session.data, authenticated]);
+  }, [session.data, authenticated]);
 
   const handleLogout = () => {
-    void api.post("/auth/logout").finally(() => router.replace("/login"));
+    void api.post("/auth/logout").finally(() => redirectToLogin());
   };
 
   if (session.isLoading || !authenticated) {

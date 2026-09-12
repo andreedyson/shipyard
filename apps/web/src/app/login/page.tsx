@@ -13,13 +13,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { redirectToDashboard } from "@/lib/auth";
 import { api } from "@/lib/api";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [pin, setPinInput] = useState("");
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState("");
@@ -31,9 +30,9 @@ export default function LoginPage() {
     void api
       .get<{ authenticated: boolean }>("/auth/session")
       .then(({ data }) => {
-        if (data.authenticated) router.replace("/");
+        if (data.authenticated) redirectToDashboard();
       });
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -53,7 +52,7 @@ export default function LoginPage() {
 
     try {
       await api.post("/auth/login", { pin: normalizedPin });
-      router.replace("/");
+      redirectToDashboard();
     } catch {
       setError("Invalid security PIN. Please try again.");
       setShake(true);

@@ -5,5 +5,17 @@ export function redirectToLogin() {
     return;
   }
 
-  window.location.assign("/login");
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+}
+
+export function redirectToDashboard() {
+  if (!isBrowser()) {
+    return;
+  }
+
+  if (window.location.pathname !== "/") {
+    window.location.replace("/");
+  }
 }
