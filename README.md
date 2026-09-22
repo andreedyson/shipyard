@@ -241,16 +241,34 @@ root, or another directory containing unrelated executable files. Configured
 scripts must be regular files inside that root; the editor deliberately refuses
 relative paths and symbolic links.
 
-### Edit a deploy script from the dashboard
+### Build a deployment pipeline from the dashboard
 
 After signing in, find the application card and click **Script**. If the app has
-a rollback script, the editor displays **Deploy** and **Rollback** tabs.
+a rollback script, the editor displays **Deploy** and **Rollback** tabs. The
+default **Pipeline steps** view presents the shell commands as an ordered list.
 
-1. Edit the shell script. It must begin with a Bash or `sh` shebang, such as
-   `#!/usr/bin/env bash`.
-2. Click **Save script**. Shipyard runs `bash -n` or `sh -n` before changing the
-   live file.
-3. Start a deployment normally. The next deployment uses the saved script.
+For an existing unstructured script, Shipyard imports blank-line-separated
+shell blocks as steps and infers names from comments, `echo` messages, and
+common commands. Review the order, then click **Convert** or edit any step to
+convert it to a managed pipeline.
+
+From the pipeline editor you can:
+
+- Rename a step and edit its multiline shell command.
+- Move steps up or down to change execution order.
+- Temporarily disable a step without deleting its command.
+- Add and remove command steps.
+- Switch to **Advanced** to inspect or edit the exact executable shell script.
+
+Click **Save pipeline** when finished. Shipyard generates a normal Bash or `sh`
+file, adds comment-only markers that preserve the step names and order, and runs
+`bash -n` or `sh -n` before changing the live file. The deployment engine still
+executes the configured `.sh` file directly; it does not need a separate
+runtime or database record.
+
+Step order matters. Keep variable definitions, lock acquisition, and `cd`
+commands before steps that depend on them. Use **Advanced** for complex shell
+constructs when representing them as a single multiline step is clearer.
 
 Saving does not restart Shipyard. The API writes a temporary file beside the
 script and atomically replaces the live file, so a deployment that is already
