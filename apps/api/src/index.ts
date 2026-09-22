@@ -21,7 +21,7 @@ app.use(
     origin: (origin) => (allowedWebOrigins.includes(origin) ? origin : null),
     credentials: true,
     allowHeaders: ["Content-Type"],
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
   }),
 );
 app.use("*", logger());

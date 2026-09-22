@@ -4,8 +4,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Clock3,
-  ExternalLink,
-  FileText,
+  Code2,
   GitBranch,
   GitCommitHorizontal,
   HeartPulse,
@@ -21,6 +20,7 @@ import { useState } from "react";
 
 import { DeployButton } from "@/components/deploy-button";
 import { LogPanel } from "@/components/log-panel";
+import { ScriptEditor } from "@/components/script-editor";
 import { StatusBadge } from "@/components/status-badge";
 import { useCurrentTime } from "@/hooks/use-current-time";
 import { formatDuration, formatRelativeDeployTime } from "@/lib/deploys";
@@ -50,7 +50,7 @@ function DeploymentProgress({ status }: { status: DeployStatus }) {
 
   return (
     <div className="rounded-xl border border-sky-500/20 bg-sky-950/20 p-3">
-      <div className="flex items-center justify-between text-[10.5px] font-semibold text-sky-300 uppercase tracking-wider">
+      <div className="flex items-center justify-between text-[10.5px] font-semibold tracking-wider text-sky-300 uppercase">
         <span className="flex items-center gap-1.5">
           <Loader2 className="size-3 animate-spin text-sky-400" />
           Deployment in progress
@@ -60,7 +60,10 @@ function DeploymentProgress({ status }: { status: DeployStatus }) {
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-4 gap-1.5" aria-label="Deployment progress">
+      <div
+        className="mt-3 grid grid-cols-4 gap-1.5"
+        aria-label="Deployment progress"
+      >
         {lifecycleStages.map((stage, index) => {
           const isDone = !isFailure && index < currentIndex;
           const isCurrent = index === currentIndex;
@@ -75,7 +78,7 @@ function DeploymentProgress({ status }: { status: DeployStatus }) {
                     isFailed
                       ? "bg-red-400 ring-2 ring-red-500/30"
                       : isCurrent
-                        ? "bg-sky-400 ring-2 ring-sky-400/50 shadow-[0_0_6px_#38bdf8]"
+                        ? "bg-sky-400 shadow-[0_0_6px_#38bdf8] ring-2 ring-sky-400/50"
                         : isDone
                           ? "bg-emerald-400 ring-2 ring-emerald-500/30"
                           : "bg-zinc-700",
@@ -146,7 +149,13 @@ function HealthSignal({ app }: { app: App }) {
       ) : (
         <HeartPulse className="size-3.5" />
       )}
-      <span>{isAttention ? "Health check failed" : isHealthy ? "Healthy" : "Verifying health"}</span>
+      <span>
+        {isAttention
+          ? "Health check failed"
+          : isHealthy
+            ? "Healthy"
+            : "Verifying health"}
+      </span>
     </div>
   );
 }
@@ -163,9 +172,11 @@ export function AppCard({
   onToggleFavorite,
 }: AppCardProps) {
   const [logsOpen, setLogsOpen] = useState(false);
+  const [scriptEditorOpen, setScriptEditorOpen] = useState(false);
   const [preferredDeployId, setPreferredDeployId] = useState<string | null>(
     null,
   );
+  const editableScripts = app.editableScripts ?? [];
   const latest = app.latestDeploy;
   const deploymentStatus = latest?.status ?? app.status;
   const isActive = activeStatuses.includes(app.status);
@@ -236,13 +247,15 @@ export function AppCard({
             <div className="rounded-xl border border-white/[0.06] bg-zinc-950/60 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 font-mono text-xs text-zinc-300">
-                  <GitBranch className="size-3.5 text-sky-400 shrink-0" />
-                  <span className="font-medium truncate max-w-[140px]">
+                  <GitBranch className="size-3.5 shrink-0 text-sky-400" />
+                  <span className="max-w-[140px] truncate font-medium">
                     {latest?.branch ?? "main"}
                   </span>
                   <span className="text-zinc-600">·</span>
                   <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 ring-1 ring-white/10">
-                    {latest?.revision?.slice(0, 7) ?? app.currentRevision?.slice(0, 7) ?? "no rev"}
+                    {latest?.revision?.slice(0, 7) ??
+                      app.currentRevision?.slice(0, 7) ??
+                      "no rev"}
                   </span>
                 </div>
                 <span className="font-mono text-[10px] text-zinc-500 uppercase">
@@ -295,7 +308,9 @@ export function AppCard({
             <p className="text-[10px] text-zinc-500">Triggered by</p>
             <p className="mt-1 flex items-center gap-1.5 truncate font-medium text-zinc-300">
               <User className="size-3 text-zinc-500" />
-              <span className="truncate">{latest?.requestedBy ?? "pin-user"}</span>
+              <span className="truncate">
+                {latest?.requestedBy ?? "pin-user"}
+              </span>
             </p>
           </div>
 
@@ -337,15 +352,28 @@ export function AppCard({
               setLogsOpen(true);
             }}
           />
-          <button
-            type="button"
-            onClick={() => setLogsOpen(true)}
-            aria-label={`Open deployment details and logs for ${app.label}`}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-zinc-900/80 px-3.5 py-1.5 text-xs font-medium text-zinc-300 shadow-sm transition-all duration-150 hover:bg-zinc-800 hover:text-white active:scale-[0.98] focus-visible:outline-none"
-          >
-            <Terminal className="size-3.5 text-zinc-400" />
-            Logs
-          </button>
+          <div className="flex items-center gap-1.5">
+            {editableScripts.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setScriptEditorOpen(true)}
+                aria-label={`Edit deployment script for ${app.label}`}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-sm transition-all duration-150 hover:bg-zinc-800 hover:text-white focus-visible:outline-none active:scale-[0.98]"
+              >
+                <Code2 className="size-3.5 text-sky-400" />
+                Script
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setLogsOpen(true)}
+              aria-label={`Open deployment details and logs for ${app.label}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-zinc-300 shadow-sm transition-all duration-150 hover:bg-zinc-800 hover:text-white focus-visible:outline-none active:scale-[0.98]"
+            >
+              <Terminal className="size-3.5 text-zinc-400" />
+              Logs
+            </button>
+          </div>
         </div>
       </motion.div>
 
@@ -358,6 +386,13 @@ export function AppCard({
         preferredDeployId={preferredDeployId}
         canRollback={app.canRollback}
         currentRevision={app.currentRevision}
+      />
+      <ScriptEditor
+        appId={app.id}
+        appLabel={app.label}
+        editableScripts={editableScripts}
+        open={scriptEditorOpen}
+        onOpenChange={setScriptEditorOpen}
       />
     </>
   );

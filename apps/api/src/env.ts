@@ -24,6 +24,8 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
   LOG_MAX_BYTES: z.coerce.number().int().min(1024).default(2_000_000),
   APPS_CONFIG_PATH: z.string().min(1).optional(),
+  SCRIPT_EDIT_ROOT: z.string().min(1).default("/home/deploy/scripts"),
+  SCRIPT_MAX_BYTES: z.coerce.number().int().min(1024).default(100_000),
   HOST: z.string().min(1).default("localhost"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 });

@@ -10,6 +10,7 @@ export type FinalDeployStatus =
 export type DeployStatus = ActiveDeployStatus | FinalDeployStatus;
 export type AppStatus = "idle" | DeployStatus;
 export type DeployAction = "deploy" | "rollback";
+export type ScriptKind = DeployAction;
 
 export type CommandDefinition = {
   command: string;
@@ -67,4 +68,5 @@ export type AppResponse = {
   latestDeploy: DeployHistoryItem | null;
   canRollback: boolean;
   healthCheckConfigured: boolean;
+  editableScripts: ScriptKind[];
 };

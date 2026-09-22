@@ -35,7 +35,8 @@ shipyard/
 
 Important files:
 
-- `apps/api/src/apps.config.ts`: list of deployable apps and script paths.
+- `apps/api/apps.config.local.json`: server-local list of deployable apps and script paths.
+- `apps/api/src/lib/script-store.ts`: validated, atomic deploy-script editing.
 - `apps/api/src/env.ts`: required API environment variables.
 - `apps/web/src/lib/api.ts`: web API client using `NEXT_PUBLIC_API_URL`.
 - `apps/api/ecosystem.config.cjs`: PM2 config for API.
@@ -65,6 +66,8 @@ WEB_ORIGINS="https://shipyard.example.com"
 COOKIE_SECURE="true"
 SESSION_TTL_HOURS="12"
 LOG_MAX_BYTES="2000000"
+SCRIPT_EDIT_ROOT="/home/deploy/scripts"
+SCRIPT_MAX_BYTES="100000"
 HOST="localhost"
 PORT="3001"
 ```
@@ -75,6 +78,8 @@ Notes:
 - `RESEND_API_KEY`, `RESEND_FROM`, and `NOTIFICATION_EMAIL` configure deploy result emails.
 - `HOST` defaults to `localhost`. Use `0.0.0.0` only when the API must be reachable directly from outside the server.
 - `PORT` defaults to `3001` if omitted.
+- `SCRIPT_EDIT_ROOT` is the only directory whose scripts can be changed from the dashboard. It defaults to `/home/deploy/scripts`.
+- `SCRIPT_MAX_BYTES` limits the size of a script loaded or saved by the editor. It defaults to 100,000 bytes.
 
 ## 3. Configure The Web App
 
@@ -218,7 +223,54 @@ Make it executable:
 chmod +x /home/deploy/scripts/deploy-example-web.sh
 ```
 
-The API process user must be allowed to execute the script and access all files used by that script.
+The API process user must be allowed to read and execute each script. To use the
+dashboard editor, that user must also be able to create and rename files in
+`SCRIPT_EDIT_ROOT`; write permission on only the existing file is not enough for
+an atomic replacement.
+
+For example, when PM2 and the API run as the `deploy` user:
+
+```bash
+sudo install -d -o deploy -g deploy -m 750 /home/deploy/scripts
+sudo chown deploy:deploy /home/deploy/scripts/deploy-example-web.sh
+sudo chmod 750 /home/deploy/scripts/deploy-example-web.sh
+```
+
+Keep `SCRIPT_EDIT_ROOT` narrow. Do not set it to `/`, `/home`, the repository
+root, or another directory containing unrelated executable files. Configured
+scripts must be regular files inside that root; the editor deliberately refuses
+relative paths and symbolic links.
+
+### Edit a deploy script from the dashboard
+
+After signing in, find the application card and click **Script**. If the app has
+a rollback script, the editor displays **Deploy** and **Rollback** tabs.
+
+1. Edit the shell script. It must begin with a Bash or `sh` shebang, such as
+   `#!/usr/bin/env bash`.
+2. Click **Save script**. Shipyard runs `bash -n` or `sh -n` before changing the
+   live file.
+3. Start a deployment normally. The next deployment uses the saved script.
+
+Saving does not restart Shipyard. The API writes a temporary file beside the
+script and atomically replaces the live file, so a deployment that is already
+running continues with the old file while the next deployment gets the new
+one. If another browser or SSH session changed the script after the editor
+loaded it, Shipyard rejects the stale save and asks you to reload.
+
+Before each replacement, Shipyard copies the prior version to:
+
+```text
+<script-directory>/.shipyard-history/<script-filename>/
+```
+
+The newest 20 backups per script are retained. Successful edits also appear in
+the audit log as `script.deploy.updated` or `script.rollback.updated`.
+
+Script editing grants the signed-in user the ability to run commands as the
+Shipyard API operating-system user. Keep the dashboard behind HTTPS and/or your
+VPN, use a strong PIN and `SESSION_SECRET`, and do not expose the API directly
+to the public internet.
 
 ## 6. Run Locally
 
@@ -363,6 +415,20 @@ pm2 reload shipyard-api
 pm2 reload shipyard-web
 ```
 
+For the first update that includes dashboard script editing:
+
+1. Wait until no deployment is active. Restarting the API during a deployment
+   marks that deployment as interrupted.
+2. Add `SCRIPT_EDIT_ROOT` and optionally `SCRIPT_MAX_BYTES` to `apps/api/.env`.
+3. Give the API process user directory-level write permission as shown in
+   [Configure Deploy Targets](#5-configure-deploy-targets).
+4. Run the normal install and build commands above, then reload the API and web
+   processes.
+
+No database migration is required for the script editor. After this one-time
+rollout, changing a script from the dashboard requires neither SSH nor a PM2
+restart.
+
 Do not use `prisma db push` for a shared or production database; it bypasses the committed migration history.
 
 ## Troubleshooting
@@ -401,6 +467,22 @@ Verify the script exists, is executable, and can run as the same user as `shipya
 ls -la /home/deploy/scripts/deploy-example-web.sh
 sudo -u <api-user> /home/deploy/scripts/deploy-example-web.sh
 ```
+
+### Script Button Is Missing Or Saving Fails
+
+The **Script** button is shown only when the configured command is an absolute
+path inside `SCRIPT_EDIT_ROOT`. Confirm the effective paths and permissions:
+
+```bash
+sudo -u <api-user> test -r /home/deploy/scripts/deploy-example-web.sh
+sudo -u <api-user> test -x /home/deploy/scripts/deploy-example-web.sh
+sudo -u <api-user> test -w /home/deploy/scripts
+```
+
+Also verify that the script is a regular file rather than a symbolic link, is
+smaller than `SCRIPT_MAX_BYTES`, and starts with a supported Bash or `sh`
+shebang. After changing environment variables, restart the API with
+`pm2 restart shipyard-api --update-env`.
 
 ### API Cannot Connect To Database
 

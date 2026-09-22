@@ -42,6 +42,17 @@ export type App = {
   latestDeploy: Deploy | null;
   canRollback: boolean;
   healthCheckConfigured: boolean;
+  editableScripts: ScriptKind[];
+};
+
+export type ScriptKind = "deploy" | "rollback";
+
+export type ScriptDocument = {
+  content: string;
+  filename: string;
+  kind: ScriptKind;
+  updatedAt: string;
+  version: string;
 };
 
 export type AuditLogEntry = {
