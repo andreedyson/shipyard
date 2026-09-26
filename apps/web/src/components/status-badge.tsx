@@ -44,7 +44,11 @@ export function StatusBadge({ status }: StatusBadgeProps) {
             "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5",
             "text-[11px] font-medium tracking-[0.05em] uppercase",
           )}
-          style={{ background: config.bg, color: config.text }}
+          style={{
+            background: config.bg,
+            color: config.text,
+            boxShadow: `inset 0 0 0 1px ${config.text}26`,
+          }}
         >
           {isRunning && (
             <span className="relative flex size-1.5 flex-shrink-0">

@@ -1,6 +1,12 @@
 "use client";
 
-import { AlertTriangle, GitCommitHorizontal, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  GitCommitHorizontal,
+  Loader2,
+  Rocket,
+  RotateCcw,
+} from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -52,9 +58,15 @@ export function DeployButton({
         type="button"
         disabled={isRunning}
         onClick={() => setOpen(true)}
-        className="inline-flex min-w-24 items-center justify-center gap-1.5 rounded-lg bg-[#f4f4f5] px-3.5 py-1.5 text-[13px] font-medium text-[#0a0a0a] transition-colors hover:bg-[#e4e4e7] disabled:pointer-events-none disabled:opacity-50"
+        className="inline-flex h-9 min-w-24 items-center justify-center gap-1.5 rounded-xl bg-zinc-100 px-4 text-[13px] font-semibold text-zinc-950 shadow-sm shadow-black/40 transition-all duration-150 hover:bg-white focus-visible:ring-2 focus-visible:ring-sky-500/50 focus-visible:outline-none active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
       >
-        {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        {isRunning ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : isRetry ? (
+          <RotateCcw className="size-3.5" />
+        ) : (
+          <Rocket className="size-3.5" />
+        )}
         {isRunning ? "Deploying..." : statusConfig[status].deployLabel}
       </button>
 

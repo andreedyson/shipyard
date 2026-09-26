@@ -50,3 +50,19 @@ export const statusConfig: Record<
     deployLabel: "Retry",
   },
 };
+
+export const activeStatuses: DeployStatus[] = ["queued", "running", "verifying"];
+export const failedStatuses: DeployStatus[] = [
+  "failed",
+  "timed_out",
+  "interrupted",
+  "cancelled",
+];
+
+export type StatusGroup = "healthy" | "active" | "failed";
+
+export function statusGroup(status: DeployStatus): StatusGroup {
+  if (activeStatuses.includes(status)) return "active";
+  if (failedStatuses.includes(status)) return "failed";
+  return "healthy";
+}

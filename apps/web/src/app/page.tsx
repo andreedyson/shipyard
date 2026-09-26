@@ -4,11 +4,16 @@ import {
   Activity,
   AlertCircle,
   Anchor,
+  ArrowUpDown,
   CheckCircle2,
+  ChevronDown,
   CloudOff,
+  Layers,
+  LogOut,
   RefreshCw,
   Search,
   Server,
+  X,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -22,34 +27,62 @@ import { api } from "@/lib/api";
 import { formatRelativeDeployTime } from "@/lib/deploys";
 import { useApps } from "@/lib/hooks/use-apps";
 import { useAuditLog } from "@/lib/hooks/use-audit-log";
+import { statusGroup, type StatusGroup } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { App, AuditLogEntry } from "@/types";
 
-const activeStatuses = ["queued", "running", "verifying"];
-const failedStatuses = ["failed", "timed_out", "interrupted", "cancelled"];
+type StatusFilter = "all" | StatusGroup;
+
+const environmentOptions = [
+  { value: "all", label: "All environments" },
+  { value: "production", label: "Production" },
+  { value: "staging", label: "Staging" },
+  { value: "preview", label: "Preview" },
+  { value: "development", label: "Development" },
+];
+
+const sortOptions = [
+  { value: "activity", label: "Recent activity" },
+  { value: "name", label: "App name" },
+  { value: "status", label: "Status" },
+];
+
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+  );
+}
 
 function DashboardSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, index) => (
+    <div className="grid gap-4 md:grid-cols-2">
+      {Array.from({ length: 4 }).map((_, index) => (
         <div
           key={index}
-          className="rounded-2xl border border-white/[0.06] bg-zinc-950/60 p-5 shadow-lg"
+          className="rounded-2xl border border-white/[0.07] bg-zinc-950/60 p-5"
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="h-4 w-32 animate-pulse rounded bg-zinc-800" />
-            <div className="h-5 w-16 animate-pulse rounded-full bg-zinc-800" />
-          </div>
-          <div className="mt-5 space-y-2">
-            <div className="h-12 w-full animate-pulse rounded-xl bg-zinc-900" />
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <div className="h-10 animate-pulse rounded-lg bg-zinc-900/60" />
-              <div className="h-10 animate-pulse rounded-lg bg-zinc-900/60" />
+          <div className="flex items-start gap-3">
+            <div className="size-10 animate-pulse rounded-xl bg-zinc-800/80" />
+            <div className="flex-1 space-y-2 pt-0.5">
+              <div className="h-4 w-32 animate-pulse rounded bg-zinc-800" />
+              <div className="h-3 w-24 animate-pulse rounded bg-zinc-900" />
             </div>
+            <div className="h-5 w-14 animate-pulse rounded-full bg-zinc-800" />
           </div>
-          <div className="mt-6 flex justify-between gap-3">
-            <div className="h-9 w-24 animate-pulse rounded-xl bg-zinc-800" />
-            <div className="h-9 w-20 animate-pulse rounded-xl bg-zinc-800" />
+          <div className="mt-5 h-11 animate-pulse rounded-xl bg-zinc-900/80" />
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((__, cell) => (
+              <div
+                key={cell}
+                className="h-9 animate-pulse rounded-lg bg-zinc-900/50"
+              />
+            ))}
+          </div>
+          <div className="mt-5 flex justify-between gap-3 border-t border-white/[0.05] pt-4">
+            <div className="h-9 w-28 animate-pulse rounded-xl bg-zinc-800" />
+            <div className="h-9 w-24 animate-pulse rounded-xl bg-zinc-900" />
           </div>
         </div>
       ))}
@@ -57,70 +90,147 @@ function DashboardSkeleton() {
   );
 }
 
-function SummaryMetric({
+const tileTones = {
+  zinc: {
+    icon: "bg-zinc-800/80 text-zinc-300 ring-white/10",
+    active: "border-white/25 bg-zinc-900/80",
+    bar: "bg-zinc-300",
+    value: "text-white",
+  },
+  green: {
+    icon: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/25",
+    active: "border-emerald-500/40 bg-emerald-950/30",
+    bar: "bg-emerald-400",
+    value: "text-white",
+  },
+  blue: {
+    icon: "bg-sky-500/10 text-sky-400 ring-sky-500/25",
+    active: "border-sky-500/40 bg-sky-950/30",
+    bar: "bg-sky-400",
+    value: "text-sky-300",
+  },
+  red: {
+    icon: "bg-red-500/10 text-red-400 ring-red-500/25",
+    active: "border-red-500/40 bg-red-950/30",
+    bar: "bg-red-400",
+    value: "text-red-300",
+  },
+};
+
+function StatTile({
   label,
+  shortLabel,
   value,
   hint,
   icon: Icon,
   tone,
+  active,
+  onClick,
 }: {
   label: string;
+  shortLabel?: string;
   value: number;
   hint: string;
   icon: typeof CheckCircle2;
-  tone: "green" | "blue" | "red" | "zinc";
+  tone: keyof typeof tileTones;
+  active: boolean;
+  onClick: () => void;
 }) {
-  const styles = {
-    green: {
-      border: "border-emerald-500/20",
-      glow: "bg-emerald-950/40 text-emerald-400 ring-1 ring-emerald-500/30",
-      dot: "bg-emerald-400 shadow-[0_0_8px_#34d399]",
-    },
-    blue: {
-      border: "border-sky-500/20",
-      glow: "bg-sky-950/40 text-sky-400 ring-1 ring-sky-500/30",
-      dot: "bg-sky-400 shadow-[0_0_8px_#38bdf8]",
-    },
-    red: {
-      border: "border-red-500/20",
-      glow: "bg-red-950/40 text-red-400 ring-1 ring-red-500/30",
-      dot: "bg-red-400 shadow-[0_0_8px_#f87171]",
-    },
-    zinc: {
-      border: "border-white/[0.08]",
-      glow: "bg-zinc-900 text-zinc-300 ring-1 ring-white/10",
-      dot: "bg-zinc-400",
-    },
-  };
-
-  const current = styles[tone];
+  const current = tileTones[tone];
+  // Only draw attention to in-progress / failing counts when they are non-zero.
+  const emphasize = value > 0 && (tone === "blue" || tone === "red");
 
   return (
-    <div
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
       className={cn(
-        "relative overflow-hidden rounded-2xl border bg-gradient-to-b from-[#111218] to-[#0a0a0f] p-4.5 shadow-md shadow-black/40 backdrop-blur-md transition-all duration-150 hover:border-white/20",
-        current.border,
+        "group relative overflow-hidden rounded-2xl border p-4 text-left transition-all duration-200 focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none sm:p-5",
+        active
+          ? current.active
+          : "border-white/[0.07] bg-zinc-950/60 hover:border-white/15 hover:bg-zinc-900/50",
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
-          {label}
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[11px] font-medium tracking-wider text-zinc-400 uppercase">
+          {shortLabel ? (
+            <>
+              <span className="sm:hidden">{shortLabel}</span>
+              <span className="hidden sm:inline">{label}</span>
+            </>
+          ) : (
+            label
+          )}
         </span>
-        <div
+        <span
           className={cn(
-            "flex size-7.5 items-center justify-center rounded-xl",
-            current.glow,
+            "flex size-8 shrink-0 items-center justify-center rounded-lg ring-1",
+            current.icon,
           )}
         >
-          <Icon className="size-4" />
-        </div>
+          <Icon
+            className={cn(
+              "size-4",
+              tone === "blue" && value > 0 && "animate-spin [animation-duration:2.5s]",
+            )}
+          />
+        </span>
       </div>
+      <p
+        className={cn(
+          "mt-3 text-3xl font-semibold tracking-tight tabular-nums",
+          emphasize ? current.value : "text-white",
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-1 hidden truncate text-xs text-zinc-500 sm:block">
+        {hint}
+      </p>
+      <span
+        className={cn(
+          "absolute inset-x-0 bottom-0 h-0.5 origin-left transition-transform duration-300",
+          current.bar,
+          active ? "scale-x-100" : "scale-x-0",
+        )}
+      />
+    </button>
+  );
+}
 
-      <div className="mt-3 flex items-baseline gap-2">
-        <p className="text-2xl font-bold tracking-tight text-white">{value}</p>
-      </div>
-      <p className="mt-1 text-[11px] text-zinc-500">{hint}</p>
-    </div>
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  icon: Icon,
+  prefix,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  icon: typeof Layers;
+  prefix?: string;
+}) {
+  return (
+    <label className="relative flex min-w-0 items-center">
+      <span className="sr-only">{label}</span>
+      <Icon className="pointer-events-none absolute left-3 hidden size-3.5 text-zinc-500 sm:block" />
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full min-w-0 cursor-pointer appearance-none truncate rounded-xl border border-white/[0.08] bg-zinc-900/70 pr-8 pl-3 text-[13px] sm:pr-9 sm:pl-9 text-zinc-200 transition outline-none hover:border-white/15 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/15 sm:w-auto [&>option]:bg-zinc-900"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {prefix ? `${prefix}${option.label}` : option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 size-3.5 text-zinc-500" />
+    </label>
   );
 }
 
@@ -149,55 +259,58 @@ function ActivityPanel({
   const appLabels = new Map(apps.map((app) => [app.id, app.label]));
   const visibleEntries = (entries ?? [])
     .filter((entry) => entry.action.startsWith("deployment."))
-    .slice(0, 6);
+    .slice(0, 8);
 
   return (
     <section
-      className="rounded-2xl border border-white/[0.08] bg-[#0c0d12]/80 p-5 shadow-lg shadow-black/40 backdrop-blur-md"
+      className="overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-950/60 backdrop-blur-md"
       aria-labelledby="activity-heading"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
-        <div>
-          <h2
-            id="activity-heading"
-            className="flex items-center gap-2 text-sm font-semibold text-zinc-200"
-          >
-            <Activity className="size-4 text-sky-400" />
-            Recent Activity
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            Real-time deployment event log across all clusters.
-          </p>
-        </div>
-        <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">
-          LIVE · 10s POLL
+      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
+        <h2
+          id="activity-heading"
+          className="flex items-center gap-2 text-sm font-semibold text-zinc-100"
+        >
+          <Activity className="size-4 text-sky-400" />
+          Recent activity
+        </h2>
+        <span className="flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-zinc-500 uppercase">
+          <span className="relative flex size-1.5">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-400" />
+          </span>
+          Live
         </span>
       </div>
 
       {isError ? (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-950/20 px-4 py-3 text-xs text-red-300">
+        <div className="m-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-950/20 px-3.5 py-3 text-xs text-red-300">
           <AlertCircle className="size-4 shrink-0 text-red-400" />
           Activity feed is temporarily unavailable.
         </div>
       ) : visibleEntries.length > 0 ? (
-        <div className="mt-3 divide-y divide-white/[0.04]">
-          {visibleEntries.map((entry) => {
+        <ol className="px-4 py-2 sm:px-5">
+          {visibleEntries.map((entry, index) => {
             const isFailure =
               entry.action.includes("failed") ||
               entry.action.includes("timed_out");
             const isSuccess = entry.action.includes("success");
+            const isLast = index === visibleEntries.length - 1;
             return (
-              <div
-                key={entry.id}
-                className="flex items-center gap-3 py-2.5 first:pt-1 last:pb-0"
-              >
+              <li key={entry.id} className="relative flex gap-3 py-2.5">
+                {!isLast ? (
+                  <span
+                    aria-hidden
+                    className="absolute top-10 bottom-0 left-[13px] w-px bg-white/[0.06]"
+                  />
+                ) : null}
                 <span
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-lg ring-1",
+                    "relative flex size-7 shrink-0 items-center justify-center rounded-full ring-1",
                     isFailure
-                      ? "bg-red-950/50 text-red-400 ring-red-500/30"
+                      ? "bg-red-950/60 text-red-400 ring-red-500/30"
                       : isSuccess
-                        ? "bg-emerald-950/50 text-emerald-400 ring-emerald-500/30"
+                        ? "bg-emerald-950/60 text-emerald-400 ring-emerald-500/30"
                         : "bg-zinc-900 text-zinc-400 ring-white/10",
                   )}
                 >
@@ -209,32 +322,40 @@ function ActivityPanel({
                     <Zap className="size-3.5" />
                   )}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-zinc-300">
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-[13px] leading-snug font-medium text-zinc-200">
                     {activityLabel(entry.action)}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-zinc-500">
                     {entry.appName ? (
-                      <span className="text-zinc-500 font-normal">
-                        {" "}
-                        · {appLabels.get(entry.appName) ?? entry.appName}
+                      <span className="text-zinc-400">
+                        {appLabels.get(entry.appName) ?? entry.appName}
+                      </span>
+                    ) : null}
+                    {entry.appName ? " · " : null}
+                    {entry.actor}
+                  </p>
+                  <p className="mt-1 flex items-center gap-2 font-mono text-[10.5px] text-zinc-600">
+                    <span>{formatRelativeDeployTime(entry.createdAt)}</span>
+                    {entry.deployId ? (
+                      <span className="truncate">
+                        #{entry.deployId.slice(0, 8)}
                       </span>
                     ) : null}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-zinc-500 font-mono">
-                    {entry.actor} · {formatRelativeDeployTime(entry.createdAt)}
-                  </p>
                 </div>
-                {entry.deployId ? (
-                  <span className="hidden font-mono text-[10px] text-zinc-600 sm:inline">
-                    {entry.deployId.slice(0, 8)}
-                  </span>
-                ) : null}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ol>
       ) : (
-        <div className="mt-4 rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-center text-xs text-zinc-600">
-          No deployment activity recorded recently.
+        <div className="flex flex-col items-center px-4 py-10 text-center">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-zinc-900 ring-1 ring-white/10">
+            <Activity className="size-4 text-zinc-500" />
+          </div>
+          <p className="mt-3 text-xs text-zinc-500">
+            No deployment activity recorded yet.
+          </p>
         </div>
       )}
     </section>
@@ -253,7 +374,7 @@ export default function DashboardPage() {
   const audit = useAuditLog({ enabled: authenticated });
   const [query, setQuery] = useState("");
   const [environment, setEnvironment] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState("activity");
   const [favorites, setFavorites] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -275,7 +396,7 @@ export default function DashboardPage() {
       }
     }
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {
+      if (event.key === "/" && !isTypingTarget(event.target)) {
         event.preventDefault();
         searchRef.current?.focus();
       }
@@ -286,29 +407,23 @@ export default function DashboardPage() {
 
   const summary = useMemo(() => {
     const data = apps.data ?? [];
+    const count = (group: StatusGroup) =>
+      data.filter((app) => statusGroup(app.status) === group).length;
     return {
       total: data.length,
-      healthy: data.filter(
-        (app) => app.status === "success" || app.status === "idle",
-      ).length,
-      active: data.filter((app) => activeStatuses.includes(app.status)).length,
-      failed: data.filter((app) => failedStatuses.includes(app.status)).length,
+      healthy: count("healthy"),
+      active: count("active"),
+      failed: count("failed"),
     };
   }, [apps.data]);
 
   const visibleApps = useMemo(() => {
     const data = (apps.data ?? [])
       .filter((app) => environment === "all" || app.environment === environment)
-      .filter((app) => {
-        if (statusFilter === "all") return true;
-        if (statusFilter === "healthy")
-          return app.status === "success" || app.status === "idle";
-        if (statusFilter === "active")
-          return activeStatuses.includes(app.status);
-        if (statusFilter === "failed")
-          return failedStatuses.includes(app.status);
-        return app.status === statusFilter;
-      })
+      .filter(
+        (app) =>
+          statusFilter === "all" || statusGroup(app.status) === statusFilter,
+      )
       .filter((app) =>
         `${app.label} ${app.id}`.toLowerCase().includes(query.toLowerCase()),
       );
@@ -328,6 +443,15 @@ export default function DashboardPage() {
       return timeB - timeA;
     });
   }, [apps.data, environment, favorites, query, sortBy, statusFilter]);
+
+  const hasActiveFilters =
+    query !== "" || environment !== "all" || statusFilter !== "all";
+
+  const clearFilters = () => {
+    setQuery("");
+    setEnvironment("all");
+    setStatusFilter("all");
+  };
 
   const toggleFavorite = (appId: string) => {
     setFavorites((current) => {
@@ -357,33 +481,75 @@ export default function DashboardPage() {
     ? formatRelativeDeployTime(new Date(apps.dataUpdatedAt).toISOString())
     : "Syncing";
 
+  const tiles = [
+    {
+      id: "all",
+      label: "All targets",
+      value: summary.total,
+      hint: "Configured applications",
+      icon: Server,
+      tone: "zinc",
+    },
+    {
+      id: "healthy",
+      label: "Healthy",
+      value: summary.healthy,
+      hint: "Idle or last deploy succeeded",
+      icon: CheckCircle2,
+      tone: "green",
+    },
+    {
+      id: "active",
+      label: "In progress",
+      value: summary.active,
+      hint: "Queued, running, or verifying",
+      icon: RefreshCw,
+      tone: "blue",
+    },
+    {
+      id: "failed",
+      label: "Needs attention",
+      shortLabel: "Attention",
+      value: summary.failed,
+      hint: "Failed, timed out, or interrupted",
+      icon: XCircle,
+      tone: "red",
+    },
+  ] as const;
+
+  const activeTile = tiles.find((tile) => tile.id === statusFilter);
+
   return (
-    <main className="min-h-screen px-4 py-6 sm:px-8 lg:px-12">
-      <section className="mx-auto flex max-w-7xl flex-col gap-7">
-        {/* Brand Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-b from-zinc-800 to-zinc-900 shadow-sm ring-1 ring-white/15">
+    <div className="relative min-h-screen">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.08),transparent_60%)]"
+      />
+
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#050506]/75 backdrop-blur-xl">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b from-zinc-800 to-zinc-900 ring-1 ring-white/15">
               <Anchor className="size-4 text-sky-400" />
             </div>
-            <div>
-              <span className="text-sm font-semibold tracking-tight text-white">
-                Shipyard
-              </span>
-              <span className="ml-2.5 rounded-md bg-zinc-900 px-2 py-0.5 font-mono text-[9.5px] font-medium tracking-wider text-zinc-400 uppercase ring-1 ring-white/10">
-                VPN Protected
-              </span>
-            </div>
+            <span className="text-[15px] font-semibold tracking-tight text-white">
+              Shipyard
+            </span>
+            <span className="hidden rounded-md bg-zinc-900 px-2 py-0.5 font-mono text-[9.5px] font-medium tracking-wider text-zinc-400 uppercase ring-1 ring-white/10 sm:inline">
+              VPN Protected
+            </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <span
               role="status"
+              title={apps.isError ? "API offline" : "API connected"}
               className={cn(
-                "hidden items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase sm:inline-flex",
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-mono text-[10px] uppercase ring-1 sm:px-2.5",
                 apps.isError
-                  ? "bg-red-950/50 text-red-300 ring-1 ring-red-500/20"
-                  : "bg-emerald-950/40 text-emerald-300 ring-1 ring-emerald-500/20",
+                  ? "bg-red-950/50 text-red-300 ring-red-500/20"
+                  : "bg-emerald-950/40 text-emerald-300 ring-emerald-500/20",
               )}
             >
               {apps.isError ? (
@@ -391,7 +557,9 @@ export default function DashboardPage() {
               ) : (
                 <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
               )}
-              {apps.isError ? "API Offline" : "API Connected"}
+              <span className="hidden sm:inline">
+                {apps.isError ? "API Offline" : "API Connected"}
+              </span>
             </span>
 
             <Button
@@ -399,253 +567,241 @@ export default function DashboardPage() {
               size="sm"
               onClick={() => void apps.refetch()}
               disabled={apps.isFetching}
-              className="h-8 gap-1.5 rounded-xl border border-white/10 bg-zinc-900/60 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white"
+              aria-label="Refresh"
+              className="h-8 gap-1.5 rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white"
             >
               <RefreshCw
-                className={cn("size-3.5 text-zinc-400", apps.isFetching && "animate-spin")}
+                className={cn(
+                  "size-3.5 text-zinc-400",
+                  apps.isFetching && "animate-spin",
+                )}
               />
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
 
             <Button
               variant="ghost"
               size="sm"
               onClick={handleLogout}
-              className="h-8 text-xs text-zinc-400 hover:bg-white/[0.04] hover:text-white"
+              aria-label="Sign out"
+              className="h-8 gap-1.5 rounded-lg px-2.5 text-xs text-zinc-400 hover:bg-white/[0.05] hover:text-white"
             >
-              Sign out
+              <LogOut className="size-3.5" />
+              <span className="hidden sm:inline">Sign out</span>
             </Button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Board Title & Top Stats */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <main className="relative mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        {/* Page heading */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               Deployment Board
             </h1>
-            <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
-              Manage container targets, trigger zero-downtime deploys, and inspect logs.
+            <p className="mt-1.5 max-w-xl text-sm text-zinc-400">
+              Manage container targets, trigger zero-downtime deploys, and
+              inspect logs.
             </p>
           </div>
-          <p className="font-mono text-[10.5px] text-zinc-500">
-            SYNCED · {lastSync}
+          <p className="flex items-center gap-2 text-xs text-zinc-500">
+            <RefreshCw
+              className={cn("size-3", apps.isFetching && "animate-spin")}
+            />
+            Synced {lastSync.toLowerCase()}
           </p>
         </div>
 
-        {/* 4 Summary Metric Cards */}
+        {/* Summary tiles double as status filters */}
         <section
-          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-          aria-label="Deployment summary"
+          className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+          aria-label="Filter by status"
         >
-          <SummaryMetric
-            label="Total Targets"
-            value={summary.total}
-            hint="Configured applications"
-            icon={Server}
-            tone="zinc"
-          />
-          <SummaryMetric
-            label="Healthy Apps"
-            value={summary.healthy}
-            hint="Idle or last deploy succeeded"
-            icon={CheckCircle2}
-            tone="green"
-          />
-          <SummaryMetric
-            label="In Progress"
-            value={summary.active}
-            hint="Queued, running, or verifying"
-            icon={RefreshCw}
-            tone="blue"
-          />
-          <SummaryMetric
-            label="Needs Attention"
-            value={summary.failed}
-            hint="Failed, timed out, or interrupted"
-            icon={XCircle}
-            tone="red"
-          />
+          {tiles.map((tile) => (
+            <StatTile
+              key={tile.id}
+              label={tile.label}
+              shortLabel={"shortLabel" in tile ? tile.shortLabel : undefined}
+              value={tile.value}
+              hint={tile.hint}
+              icon={tile.icon}
+              tone={tile.tone}
+              active={statusFilter === tile.id}
+              onClick={() =>
+                setStatusFilter(
+                  statusFilter === tile.id && tile.id !== "all"
+                    ? "all"
+                    : tile.id,
+                )
+              }
+            />
+          ))}
         </section>
 
-        {/* Search, Environment, Sort, and Status Filter Controls */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-zinc-950/40 p-3 sm:p-4 backdrop-blur-md">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {/* Search Input */}
-            <div className="relative max-w-md flex-1">
-              <Search className="absolute top-2.5 left-3 size-4 text-zinc-500" />
-              <input
-                ref={searchRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                aria-label="Search apps"
-                placeholder="Search apps by name, id... (Press / to focus)"
-                className="h-9 w-full rounded-xl border border-white/10 bg-zinc-900/90 pr-8 pl-9 font-mono text-xs text-zinc-200 placeholder:font-sans placeholder:text-zinc-600 focus:border-white/30 focus:outline-none focus:ring-1 focus:ring-white/20"
-              />
-              <span className="pointer-events-none absolute top-2 right-2.5 rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[9px] text-zinc-500">
-                /
-              </span>
-            </div>
-
-            {/* Environment Filter */}
-            <select
-              id="environment-filter"
-              value={environment}
-              onChange={(event) => setEnvironment(event.target.value)}
-              className="h-9 rounded-xl border border-white/10 bg-zinc-900/90 px-3 text-xs text-zinc-300 outline-none focus:border-white/30"
-            >
-              <option value="all">All environments</option>
-              <option value="production">Production</option>
-              <option value="staging">Staging</option>
-              <option value="preview">Preview</option>
-              <option value="development">Development</option>
-            </select>
-
-            {/* Sort Filter */}
-            <select
-              id="sort-filter"
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value)}
-              className="h-9 rounded-xl border border-white/10 bg-zinc-900/90 px-3 text-xs text-zinc-300 outline-none focus:border-white/30"
-            >
-              <option value="activity">Sort: Recent activity</option>
-              <option value="name">Sort: App name</option>
-              <option value="status">Sort: Status</option>
-            </select>
-          </div>
-
-          {/* Status Tabs with counts */}
-          <div
-            className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.04] pt-2.5"
-            aria-label="Filter by status"
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: "all", label: "All", count: summary.total, dot: null },
-                {
-                  id: "healthy",
-                  label: "Healthy",
-                  count: summary.healthy,
-                  dot: "bg-emerald-400",
-                },
-                {
-                  id: "active",
-                  label: "Deploying",
-                  count: summary.active,
-                  dot: "bg-sky-400 animate-pulse",
-                },
-                {
-                  id: "failed",
-                  label: "Needs Attention",
-                  count: summary.failed,
-                  dot: "bg-red-400",
-                },
-              ].map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  aria-pressed={statusFilter === filter.id}
-                  onClick={() => setStatusFilter(filter.id)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 focus-visible:outline-none",
-                    statusFilter === filter.id
-                      ? "bg-zinc-100 text-zinc-950 font-semibold shadow-sm"
-                      : "bg-zinc-900/60 text-zinc-400 hover:bg-zinc-800 hover:text-white ring-1 ring-white/[0.06]",
-                  )}
-                >
-                  {filter.dot && (
-                    <span className={cn("size-1.5 rounded-full", filter.dot)} />
-                  )}
-                  <span>{filter.label}</span>
-                  <span
-                    className={cn(
-                      "font-mono text-[10px]",
-                      statusFilter === filter.id
-                        ? "text-zinc-700"
-                        : "text-zinc-500",
-                    )}
-                  >
-                    {filter.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <span className="font-mono text-[11px] text-zinc-500">
-              Showing {visibleApps.length} of {summary.total} targets
-            </span>
-          </div>
-        </div>
-
-        {/* Loading */}
-        {apps.isLoading ? <DashboardSkeleton /> : null}
-
-        {/* Error Alert */}
-        {apps.isError ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/25 bg-red-950/30 p-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="mt-0.5 size-4.5 shrink-0 text-red-400" />
-              <div>
-                <p className="text-sm font-semibold text-red-300">
-                  Unable to connect to deployment engine.
-                </p>
-                <p className="mt-1 text-xs text-red-200/80">
-                  Check API connectivity, VPN session, or authorization token.
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void apps.refetch()}
-              className="rounded-xl border-red-500/30 bg-red-900/40 text-red-200 hover:bg-red-900/60"
-            >
-              Retry Connection
-            </Button>
-          </div>
-        ) : null}
-
-        {/* App Grid */}
-        {apps.data ? (
-          visibleApps.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {visibleApps.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  favorite={favorites.includes(app.id)}
-                  onToggleFavorite={() => toggleFavorite(app.id)}
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="flex min-w-0 flex-col gap-4" aria-label="Applications">
+            {/* Toolbar */}
+            <div className="flex flex-col gap-2 rounded-2xl border border-white/[0.07] bg-zinc-950/60 p-2 backdrop-blur-md sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-500" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      setQuery("");
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  aria-label="Search apps"
+                  placeholder="Search apps by name or id"
+                  className="h-10 w-full rounded-xl border border-transparent bg-zinc-900/70 pr-10 pl-9 text-[13px] text-zinc-200 transition outline-none placeholder:text-zinc-500 hover:border-white/10 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/15"
                 />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 py-20 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-zinc-900/80 ring-1 ring-white/10">
-                <Search className="size-5 text-zinc-500" />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Clear search"
+                    className="absolute top-1/2 right-2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                ) : (
+                  <kbd className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded-md border border-white/10 bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400 sm:block">
+                    /
+                  </kbd>
+                )}
               </div>
-              <h4 className="mt-4 text-sm font-semibold text-zinc-200">
-                {apps.data.length === 0
-                  ? "No targets configured"
-                  : "No matching apps found"}
-              </h4>
-              <p className="mt-1 max-w-xs text-xs text-zinc-500">
-                {apps.data.length === 0
-                  ? "Configure your apps in the deployment repository to get started."
-                  : "Try clearing your search query or switching the status filter."}
-              </p>
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <FilterSelect
+                  label="Environment"
+                  value={environment}
+                  onChange={setEnvironment}
+                  options={environmentOptions}
+                  icon={Layers}
+                />
+                <FilterSelect
+                  label="Sort by"
+                  value={sortBy}
+                  onChange={setSortBy}
+                  options={sortOptions}
+                  icon={ArrowUpDown}
+                />
+              </div>
             </div>
-          )
-        ) : null}
 
-        {/* Activity Audit Stream */}
-        {apps.data && apps.data.length > 0 ? (
-          <ActivityPanel
-            apps={apps.data}
-            entries={audit.data}
-            isError={audit.isError}
-          />
-        ) : null}
-      </section>
-    </main>
+            {/* Result summary */}
+            <div className="flex min-h-7 flex-wrap items-center justify-between gap-2 px-1">
+              <p className="text-xs text-zinc-500">
+                Showing{" "}
+                <span className="font-medium text-zinc-300">
+                  {visibleApps.length}
+                </span>{" "}
+                of {summary.total} targets
+                {activeTile && activeTile.id !== "all" ? (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span className="text-zinc-300">
+                      {activeTile.label.toLowerCase()}
+                    </span>
+                  </>
+                ) : null}
+              </p>
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white"
+                >
+                  <X className="size-3" />
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+
+            {apps.isLoading ? <DashboardSkeleton /> : null}
+
+            {apps.isError ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-red-500/25 bg-red-950/25 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 size-4.5 shrink-0 text-red-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-300">
+                      Unable to connect to deployment engine.
+                    </p>
+                    <p className="mt-1 text-xs text-red-200/80">
+                      Check API connectivity, VPN session, or authorization
+                      token.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void apps.refetch()}
+                  className="rounded-xl border-red-500/30 bg-red-900/40 text-red-200 hover:bg-red-900/60"
+                >
+                  Retry connection
+                </Button>
+              </div>
+            ) : null}
+
+            {apps.data ? (
+              visibleApps.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {visibleApps.map((app) => (
+                    <AppCard
+                      key={app.id}
+                      app={app}
+                      favorite={favorites.includes(app.id)}
+                      onToggleFavorite={() => toggleFavorite(app.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 px-6 py-16 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-2xl bg-zinc-900/80 ring-1 ring-white/10">
+                    <Search className="size-5 text-zinc-500" />
+                  </div>
+                  <h3 className="mt-4 text-sm font-semibold text-zinc-200">
+                    {apps.data.length === 0
+                      ? "No targets configured"
+                      : "No matching apps found"}
+                  </h3>
+                  <p className="mt-1 max-w-xs text-xs text-zinc-500">
+                    {apps.data.length === 0
+                      ? "Configure your apps in the deployment repository to get started."
+                      : "Try a different search term or clear the active filters."}
+                  </p>
+                  {apps.data.length > 0 && hasActiveFilters ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearFilters}
+                      className="mt-4 rounded-lg border-white/10 bg-zinc-900 text-xs text-zinc-300 hover:bg-zinc-800"
+                    >
+                      Clear filters
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            ) : null}
+          </section>
+
+          {apps.data && apps.data.length > 0 ? (
+            <aside className="xl:sticky xl:top-20">
+              <ActivityPanel
+                apps={apps.data}
+                entries={audit.data}
+                isError={audit.isError}
+              />
+            </aside>
+          ) : null}
+        </div>
+      </main>
+    </div>
   );
 }
