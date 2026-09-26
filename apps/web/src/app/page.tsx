@@ -396,7 +396,11 @@ export default function DashboardPage() {
       }
     }
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "/" && !isTypingTarget(event.target)) {
+      if (
+        event.key === "/" &&
+        !isTypingTarget(event.target) &&
+        !document.querySelector('[role="dialog"]')
+      ) {
         event.preventDefault();
         searchRef.current?.focus();
       }

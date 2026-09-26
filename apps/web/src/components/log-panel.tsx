@@ -2,34 +2,36 @@
 
 import {
   AlertCircle,
-  AlertTriangle,
   ArrowDown,
+  ArrowLeft,
   Check,
   CheckCircle2,
-  ChevronRight,
+  CircleSlash,
   Clock3,
   Copy,
   Download,
   GitBranch,
   GitCommitHorizontal,
+  History,
   Layers,
+  Loader2,
   Maximize2,
   Minimize2,
   Search,
   Square,
   Terminal,
-  Trash2,
+  Timer,
   Undo2,
   User,
   WrapText,
   X,
+  XCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AnsiRenderer, stripAnsi } from "@/lib/ansi";
 import { StatusBadge } from "@/components/status-badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -39,9 +41,19 @@ import {
 } from "@/components/ui/sheet";
 import { redirectToLogin } from "@/lib/auth";
 import { useCurrentTime } from "@/hooks/use-current-time";
-import { formatDeployTime, formatRelativeDeployTime } from "@/lib/deploys";
+import {
+  formatDeployTime,
+  formatDuration,
+  formatRelativeDeployTime,
+} from "@/lib/deploys";
 import { useDeployHistory } from "@/lib/hooks/use-deploy-history";
 import { useCancelDeploy, useRollback } from "@/lib/hooks/use-deploy";
+import {
+  activeStatuses,
+  failedStatuses,
+  statusGroup,
+  type StatusGroup,
+} from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { DeployHistoryItem, DeployStatus } from "@/types";
 
@@ -60,8 +72,33 @@ type LogLine = {
   id: number;
   raw: string;
   clean: string;
-  kind: "normal" | "success" | "error" | "warning" | "stage" | "separator";
-  timestamp?: string;
+  kind: "normal" | "success" | "error" | "warning" | "stage";
+};
+
+type LevelFilter = "all" | "error" | "warning";
+
+const statusVerb: Record<DeployStatus, string> = {
+  idle: "idle",
+  queued: "queued",
+  running: "in progress",
+  verifying: "verifying",
+  success: "succeeded",
+  failed: "failed",
+  cancelled: "cancelled",
+  timed_out: "timed out",
+  interrupted: "interrupted",
+};
+
+const stageLabel: Record<DeployStatus, string> = {
+  queued: "Queued",
+  running: "Deploying",
+  verifying: "Verifying health",
+  success: "Live",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  timed_out: "Timed out",
+  interrupted: "Interrupted",
+  idle: "Idle",
 };
 
 function getLineKind(text: string): LogLine["kind"] {
@@ -79,6 +116,7 @@ function getLineKind(text: string): LogLine["kind"] {
     lower.includes("error") ||
     lower.includes("failed") ||
     lower.includes("err:") ||
+    lower.includes("err!") ||
     lower.includes("fatal:") ||
     lower.includes("exit 1") ||
     lower.includes("exit 2") ||
@@ -104,6 +142,52 @@ function getLineKind(text: string): LogLine["kind"] {
   return "normal";
 }
 
+function deployTitle(deploy: DeployHistoryItem) {
+  const action = deploy.action === "rollback" ? "Rollback" : "Deploy";
+  return `${action} ${statusVerb[deploy.status]}`;
+}
+
+function dayLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round(
+    (startOfDay(new Date()) - startOfDay(date)) / 86_400_000,
+  );
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function DeployStatusIcon({
+  status,
+  className,
+}: {
+  status: DeployStatus;
+  className?: string;
+}) {
+  if (activeStatuses.includes(status)) {
+    return (
+      <Loader2 className={cn("animate-spin text-sky-400", className)} />
+    );
+  }
+  if (status === "cancelled") {
+    return <CircleSlash className={cn("text-zinc-500", className)} />;
+  }
+  if (failedStatuses.includes(status)) {
+    return <XCircle className={cn("text-red-400", className)} />;
+  }
+  if (status === "success") {
+    return <CheckCircle2 className={cn("text-emerald-400", className)} />;
+  }
+  return <Clock3 className={cn("text-zinc-500", className)} />;
+}
+
 function DeployHistoryButton({
   deploy,
   active,
@@ -113,72 +197,80 @@ function DeployHistoryButton({
   active: boolean;
   onSelect: () => void;
 }) {
-  const isFailed = ["failed", "timed_out", "interrupted"].includes(
-    deploy.status,
-  );
-  const isRunning = ["running", "queued", "verifying"].includes(deploy.status);
-  const isSuccess = deploy.status === "success";
-
   return (
     <button
       type="button"
       onClick={onSelect}
+      aria-current={active ? "true" : undefined}
       className={cn(
-        "group relative w-full rounded-xl px-3.5 py-3 text-left transition-all duration-150",
+        "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none",
         active
-          ? "bg-zinc-800/80 shadow-[0_0_20px_rgba(0,0,0,0.5)] ring-1 ring-white/20"
-          : "bg-zinc-900/40 hover:bg-zinc-800/40 hover:ring-1 hover:ring-white/10",
+          ? "bg-white/[0.07] ring-1 ring-white/10"
+          : "hover:bg-white/[0.035]",
       )}
-      style={{
-        borderLeft: active
-          ? isSuccess
-            ? "3px solid #34d399"
-            : isFailed
-              ? "3px solid #f87171"
-              : isRunning
-                ? "3px solid #38bdf8"
-                : "3px solid #a1a1aa"
-          : "3px solid transparent",
-      }}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 font-mono text-[11px] font-medium text-zinc-200">
-            <span className="truncate">{deploy.id}</span>
-          </div>
-
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
-            <Clock3 className="size-3 text-zinc-500" />
-            <span>{formatRelativeDeployTime(deploy.createdAt)}</span>
-            {deploy.durationMs != null && (
-              <>
-                <span className="text-zinc-600">·</span>
-                <span className="font-mono text-[10px] text-zinc-400">
-                  {(deploy.durationMs / 1000).toFixed(1)}s
-                </span>
-              </>
-            )}
-          </div>
-
-          <div className="mt-1.5 flex items-center gap-2 font-mono text-[10px] text-zinc-400">
-            <span className="inline-flex items-center gap-1 truncate rounded bg-zinc-800/80 px-1.5 py-0.5 text-zinc-300">
-              <GitBranch className="size-2.5 text-zinc-400" />
-              {deploy.branch ?? "unknown"}
-            </span>
-            <span className="text-zinc-500">
-              {deploy.revision?.slice(0, 7) ?? "no rev"}
-            </span>
-          </div>
-
-          {deploy.commitMessage && (
-            <p className="mt-1.5 line-clamp-1 text-[11px] text-zinc-400">
-              {deploy.commitMessage}
-            </p>
+      <DeployStatusIcon
+        status={deploy.status}
+        className="mt-0.5 size-4 shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "truncate text-[13px] font-medium",
+            active ? "text-white" : "text-zinc-300",
           )}
-        </div>
-
-        <StatusBadge status={deploy.status} />
+        >
+          {deploy.commitMessage ?? deployTitle(deploy)}
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <span className="truncate">
+            {formatRelativeDeployTime(deploy.createdAt)}
+          </span>
+          {deploy.durationMs != null ? (
+            <>
+              <span className="text-zinc-700">·</span>
+              <span className="font-mono">
+                {formatDuration(deploy.durationMs)}
+              </span>
+            </>
+          ) : null}
+          {deploy.revision ? (
+            <span className="ml-auto shrink-0 font-mono text-[10.5px] text-zinc-600">
+              {deploy.revision.slice(0, 7)}
+            </span>
+          ) : null}
+        </p>
       </div>
+    </button>
+  );
+}
+
+function ToolbarIconButton({
+  label,
+  pressed,
+  onClick,
+  children,
+}: {
+  label: string;
+  pressed?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={pressed}
+      title={label}
+      className={cn(
+        "flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none",
+        pressed
+          ? "bg-white/10 text-white"
+          : "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100",
+      )}
+    >
+      {children}
     </button>
   );
 }
@@ -192,33 +284,31 @@ function StreamedDeployLogs({
 }) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [isStreaming, setIsStreaming] = useState(true);
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [exitStatus, setExitStatus] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [levelFilter, setLevelFilter] = useState<
-    "all" | "error" | "warning" | "info"
-  >("all");
-  const [showLineNumbers, setShowLineNumbers] = useState(true);
-  const [wrapLines, setWrapLines] = useState(true);
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
+  // Wide tables (e.g. pm2 output) read best unwrapped; narrow screens need wrapping.
+  const [wrapLines, setWrapLines] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches,
+  );
   const [copied, setCopied] = useState(false);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
 
   const scrollViewportRef = useRef<HTMLDivElement>(null);
-  const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const sequenceRef = useRef(0);
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
   const showStreaming = isStreaming && Boolean(baseUrl);
 
-  // Auto-scroll handler
+  // Follow new output unless the user has scrolled up to read.
   useEffect(() => {
-    if (autoScroll && !isUserScrolledUp) {
-      bottomAnchorRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
+    const viewport = scrollViewportRef.current;
+    if (viewport && !isUserScrolledUp) {
+      viewport.scrollTop = viewport.scrollHeight;
     }
-  }, [lines, autoScroll, isUserScrolledUp]);
+  }, [lines, exitStatus, isUserScrolledUp]);
 
-  // Connect to SSE stream
   useEffect(() => {
     if (!deployId) {
       return;
@@ -226,39 +316,32 @@ function StreamedDeployLogs({
 
     sequenceRef.current = 0;
 
-    const addLines = (
-      rawText: string,
-      explicitKind?: LogLine["kind"],
-      isStage = false,
-    ) => {
+    const addLines = (rawText: string, explicitKind?: LogLine["kind"]) => {
       if (!rawText) return;
       const chunks = rawText.split(/\r?\n/);
-
-      setLines((current) => {
-        const newItems: LogLine[] = [];
-        for (const chunk of chunks) {
-          if (chunk.length === 0 && chunks.length > 1) {
-            // Keep empty line for spacing
-            newItems.push({
-              id: ++sequenceRef.current,
-              raw: "",
-              clean: "",
-              kind: "normal",
-            });
-            continue;
-          }
-          const clean = stripAnsi(chunk);
-          const kind =
-            explicitKind ?? (isStage ? "stage" : getLineKind(clean || chunk));
+      // Build outside the updater: StrictMode double-invokes updaters, which
+      // would otherwise skip line numbers.
+      const newItems: LogLine[] = [];
+      for (const chunk of chunks) {
+        if (chunk.length === 0 && chunks.length > 1) {
+          // Keep empty line for spacing
           newItems.push({
             id: ++sequenceRef.current,
-            raw: chunk,
-            clean,
-            kind,
+            raw: "",
+            clean: "",
+            kind: "normal",
           });
+          continue;
         }
-        return [...current, ...newItems];
-      });
+        const clean = stripAnsi(chunk);
+        newItems.push({
+          id: ++sequenceRef.current,
+          raw: chunk,
+          clean,
+          kind: explicitKind ?? getLineKind(clean || chunk),
+        });
+      }
+      setLines((current) => [...current, ...newItems]);
     };
 
     if (!baseUrl) {
@@ -272,13 +355,10 @@ function StreamedDeployLogs({
     });
     let finished = false;
 
-    const finishStream = (exitMsg?: string) => {
+    const finishStream = () => {
       if (finished) return;
       finished = true;
       setIsStreaming(false);
-      if (exitMsg) {
-        addLines(`\n─── ${exitMsg} ───`, "separator");
-      }
       eventSource.close();
     };
 
@@ -287,22 +367,15 @@ function StreamedDeployLogs({
     };
 
     const handleExit = (event: MessageEvent<string>) => {
-      const exitStatus = event.data || "completed";
-      const kind =
-        exitStatus === "success"
-          ? "success"
-          : exitStatus === "failed"
-            ? "error"
-            : "normal";
-      addLines(`Deployment ${exitStatus}`, kind);
-      finishStream(`Process exited with status: ${exitStatus}`);
+      setExitStatus(event.data || "completed");
+      finishStream();
     };
 
     eventSource.onmessage = handleLog;
     eventSource.addEventListener("log", handleLog);
     eventSource.addEventListener("exit", handleExit);
     eventSource.addEventListener("stage", (event: MessageEvent<string>) => {
-      addLines(`STAGE: ${event.data.toUpperCase()}`, "stage", true);
+      addLines(`Stage: ${event.data}`, "stage");
     });
 
     eventSource.onerror = () => {
@@ -324,7 +397,6 @@ function StreamedDeployLogs({
     };
   }, [baseUrl, deployId]);
 
-  // Track scroll position to know if user scrolled away from bottom
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const distanceToBottom =
@@ -334,35 +406,27 @@ function StreamedDeployLogs({
 
   const scrollToBottom = () => {
     setIsUserScrolledUp(false);
-    bottomAnchorRef.current?.scrollIntoView({
+    scrollViewportRef.current?.scrollTo({
+      top: scrollViewportRef.current.scrollHeight,
       behavior: "smooth",
-      block: "end",
     });
   };
 
-  // Filter lines
   const filteredLines = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return lines.filter((line) => {
-      // Level filter
-      if (levelFilter === "error" && line.kind !== "error") return false;
-      if (levelFilter === "warning" && line.kind !== "warning") return false;
-      if (levelFilter === "info" && ["error", "warning"].includes(line.kind)) {
+      if (levelFilter !== "all" && line.kind !== levelFilter) return false;
+      if (
+        query &&
+        !line.clean.toLowerCase().includes(query) &&
+        !line.raw.toLowerCase().includes(query)
+      ) {
         return false;
       }
-
-      // Search query filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesClean = line.clean.toLowerCase().includes(query);
-        const matchesRaw = line.raw.toLowerCase().includes(query);
-        if (!matchesClean && !matchesRaw) return false;
-      }
-
       return true;
     });
   }, [lines, levelFilter, searchQuery]);
 
-  // Counts
   const stats = useMemo(() => {
     let errors = 0;
     let warnings = 0;
@@ -373,21 +437,17 @@ function StreamedDeployLogs({
     return { errors, warnings, total: lines.length };
   }, [lines]);
 
-  const handleCopyLogs = () => {
-    const textToCopy = lines
-      .filter((l) => l.kind !== "separator")
-      .map((l) => l.clean || l.raw)
-      .join("\n");
+  const logText = () => lines.map((l) => l.clean || l.raw).join("\n");
 
-    void navigator.clipboard.writeText(textToCopy).then(() => {
+  const handleCopyLogs = () => {
+    void navigator.clipboard.writeText(logText()).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
   const handleDownloadLogs = () => {
-    const textToDownload = lines.map((l) => l.clean || l.raw).join("\n");
-    const blob = new Blob([textToDownload], { type: "text/plain" });
+    const blob = new Blob([logText()], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -396,366 +456,298 @@ function StreamedDeployLogs({
     URL.revokeObjectURL(url);
   };
 
-  const handleClearView = () => {
-    setLines([]);
-  };
-
   if (!deployId) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-8 text-center text-zinc-500">
-        <Terminal className="mb-3 size-10 opacity-30" />
-        <p className="text-sm font-medium text-zinc-400">
+      <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+        <div className="flex size-11 items-center justify-center rounded-xl bg-zinc-900 ring-1 ring-white/10">
+          <Terminal className="size-5 text-zinc-500" />
+        </div>
+        <p className="mt-3 text-sm font-medium text-zinc-300">
           No deployment selected
         </p>
-        <p className="mt-1 text-xs text-zinc-600">
-          Select a deployment from the history panel to view live logs.
+        <p className="mt-1 text-xs text-zinc-500">
+          Pick a deployment from the history to view its logs.
         </p>
       </div>
     );
   }
 
+  const levelOptions: { id: LevelFilter; label: string; count: number }[] = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "error", label: "Errors", count: stats.errors },
+    { id: "warning", label: "Warnings", count: stats.warnings },
+  ];
+
+  const exitTone =
+    exitStatus === "success"
+      ? "bg-emerald-500/[0.08] text-emerald-300 ring-emerald-500/20"
+      : exitStatus === "failed"
+        ? "bg-red-500/[0.08] text-red-300 ring-red-500/20"
+        : "bg-white/[0.03] text-zinc-300 ring-white/10";
+
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-[#07080b]">
-      {/* Terminal Titlebar Chrome */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] bg-[#0c0d12]/95 px-4 py-2.5 backdrop-blur-md">
-        {/* Left: macOS dots + Breadcrumbs */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-full bg-rose-500/80 shadow-[0_0_6px_rgba(244,63,94,0.4)]" />
-            <span className="size-2.5 rounded-full bg-amber-500/80 shadow-[0_0_6px_rgba(245,158,11,0.4)]" />
-            <span className="size-2.5 rounded-full bg-emerald-500/80 shadow-[0_0_6px_rgba(16,185,129,0.4)]" />
-          </div>
-
-          <div className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-400">
-            <Terminal className="size-3.5 text-zinc-500" />
-            <span className="text-zinc-500">console</span>
-            <ChevronRight className="size-3 text-zinc-600" />
-            <span className="font-semibold text-zinc-200">{appLabel}</span>
-            <ChevronRight className="size-3 text-zinc-600" />
-            <span className="text-sky-400/90">{deployId.slice(0, 10)}</span>
-          </div>
+    <div className="relative flex h-full flex-col overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.06] px-3 py-2 sm:px-4">
+        <div className="relative w-full sm:w-auto sm:min-w-44 sm:flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-zinc-500" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // Esc should clear the search, not close the sheet.
+              if (e.key === "Escape" && searchQuery) {
+                e.stopPropagation();
+                setSearchQuery("");
+              }
+            }}
+            aria-label="Search logs"
+            placeholder="Search logs"
+            className="h-8 w-full rounded-lg border border-white/[0.08] bg-zinc-900/70 pr-8 pl-8 text-xs text-zinc-200 transition outline-none placeholder:text-zinc-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/15"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear log search"
+              className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded text-zinc-500 hover:text-zinc-200"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
         </div>
 
-        {/* Right: Live Stream status */}
-        <div className="flex items-center gap-2">
-          {showStreaming ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/80 px-2.5 py-0.5 text-[10px] font-semibold tracking-wider text-emerald-400 uppercase ring-1 ring-emerald-500/30">
-              <span className="relative flex size-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-              </span>
-              Streaming
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800/80 px-2.5 py-0.5 text-[10px] font-medium text-zinc-400 ring-1 ring-white/10">
-              <CheckCircle2 className="size-3 text-zinc-400" />
-              Finished
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Terminal Toolbar: Search, Filters & Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] bg-[#090a0f] px-4 py-2 text-xs">
-        {/* Search & Level Filters */}
-        <div className="flex min-w-[240px] flex-1 flex-wrap items-center gap-2">
-          {/* Search Input */}
-          <div className="relative max-w-xs min-w-[180px] flex-1">
-            <Search className="absolute top-2 left-2.5 size-3.5 text-zinc-500" />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search in logs..."
-              className="h-7.5 w-full rounded-md border border-white/10 bg-zinc-900/90 pr-7 pl-8 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/40 focus:outline-none"
-            />
-            {searchQuery && (
+        <div
+          role="group"
+          aria-label="Filter by log level"
+          className="flex items-center rounded-lg bg-zinc-900/70 p-0.5 ring-1 ring-white/[0.06]"
+        >
+          {levelOptions.map((option) => {
+            const selected = levelFilter === option.id;
+            return (
               <button
+                key={option.id}
                 type="button"
-                onClick={() => setSearchQuery("")}
-                aria-label="Clear log search"
-                className="absolute top-2 right-2 text-zinc-500 hover:text-zinc-300"
+                aria-pressed={selected}
+                onClick={() => setLevelFilter(option.id)}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors",
+                  selected
+                    ? option.id === "error"
+                      ? "bg-red-500/15 text-red-200"
+                      : option.id === "warning"
+                        ? "bg-amber-500/15 text-amber-200"
+                        : "bg-white/10 text-white"
+                    : "text-zinc-400 hover:text-zinc-100",
+                )}
               >
-                <X className="size-3.5" />
+                {option.label}
+                <span
+                  className={cn(
+                    "font-mono text-[10px] tabular-nums",
+                    selected ? "opacity-80" : "text-zinc-600",
+                    !selected &&
+                      option.count > 0 &&
+                      option.id === "error" &&
+                      "text-red-400",
+                    !selected &&
+                      option.count > 0 &&
+                      option.id === "warning" &&
+                      "text-amber-400",
+                  )}
+                >
+                  {option.count}
+                </span>
               </button>
-            )}
-          </div>
-
-          {/* Level Filter Tabs */}
-          <div className="flex items-center rounded-md bg-zinc-900/80 p-0.5 ring-1 ring-white/10">
-            <button
-              type="button"
-              onClick={() => setLevelFilter("all")}
-              className={cn(
-                "rounded px-2 py-1 text-[10px] font-medium transition-colors",
-                levelFilter === "all"
-                  ? "bg-zinc-800 text-zinc-200 shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200",
-              )}
-            >
-              All ({stats.total})
-            </button>
-            <button
-              type="button"
-              onClick={() => setLevelFilter("error")}
-              className={cn(
-                "flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
-                levelFilter === "error"
-                  ? "bg-red-950/80 text-red-300 ring-1 ring-red-500/30"
-                  : "text-zinc-400 hover:text-red-400",
-              )}
-            >
-              <AlertCircle className="size-2.5" />
-              Errors ({stats.errors})
-            </button>
-            <button
-              type="button"
-              onClick={() => setLevelFilter("warning")}
-              className={cn(
-                "flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
-                levelFilter === "warning"
-                  ? "bg-amber-950/80 text-amber-300 ring-1 ring-amber-500/30"
-                  : "text-zinc-400 hover:text-amber-400",
-              )}
-            >
-              <AlertTriangle className="size-2.5" />
-              Warn ({stats.warnings})
-            </button>
-          </div>
+            );
+          })}
         </div>
 
-        {/* View Options & Action Buttons */}
-        <div className="flex items-center gap-1">
-          {/* Line Numbers Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowLineNumbers((v) => !v)}
-            aria-pressed={showLineNumbers}
-            className={cn(
-              "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-              showLineNumbers
-                ? "bg-zinc-800 text-zinc-200 ring-1 ring-white/15"
-                : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300",
-            )}
-            title="Toggle line numbers"
-          >
-            <span className="font-mono text-[10px]">#</span>
-            <span className="hidden text-[10px] sm:inline">Lines</span>
-          </button>
-
-          {/* Wrap Lines Toggle */}
-          <button
-            type="button"
+        <div className="ml-auto flex items-center gap-0.5">
+          <ToolbarIconButton
+            label={wrapLines ? "Disable line wrap" : "Wrap long lines"}
+            pressed={wrapLines}
             onClick={() => setWrapLines((v) => !v)}
-            aria-pressed={wrapLines}
-            className={cn(
-              "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-              wrapLines
-                ? "bg-zinc-800 text-zinc-200 ring-1 ring-white/15"
-                : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300",
-            )}
-            title="Toggle word wrap"
           >
-            <WrapText className="size-3" />
-            <span className="hidden text-[10px] sm:inline">Wrap</span>
-          </button>
-
-          {/* Auto-scroll Toggle */}
-          <button
-            type="button"
-            onClick={() => setAutoScroll((v) => !v)}
-            aria-pressed={autoScroll}
-            className={cn(
-              "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
-              autoScroll
-                ? "bg-sky-950/70 text-sky-300 ring-1 ring-sky-500/30"
-                : "text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300",
-            )}
-            title="Auto-scroll to latest output"
-          >
-            <ArrowDown className="size-3" />
-            <span className="hidden sm:inline">Scroll</span>
-          </button>
-
-          <div className="mx-1 h-3.5 w-px bg-white/10" />
-
-          {/* Copy Logs */}
-          <button
-            type="button"
+            <WrapText className="size-4" />
+          </ToolbarIconButton>
+          <ToolbarIconButton
+            label={copied ? "Copied" : "Copy logs"}
             onClick={handleCopyLogs}
-            aria-label="Copy deployment logs"
-            className="flex items-center gap-1 rounded-md bg-zinc-900/90 px-2 py-1 text-[10px] font-medium text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-zinc-800 hover:text-white"
-            title="Copy logs to clipboard"
           >
             {copied ? (
-              <>
-                <Check className="size-3 text-emerald-400" />
-                <span className="text-emerald-400">Copied</span>
-              </>
+              <Check className="size-4 text-emerald-400" />
             ) : (
-              <>
-                <Copy className="size-3" />
-                <span className="hidden sm:inline">Copy</span>
-              </>
+              <Copy className="size-4" />
             )}
-          </button>
-
-          {/* Download Logs */}
-          <button
-            type="button"
-            onClick={handleDownloadLogs}
-            aria-label="Download deployment logs"
-            className="rounded-md bg-zinc-900/90 p-1 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-zinc-800 hover:text-white"
-            title="Download log file (.log)"
-          >
-            <Download className="size-3.5" />
-          </button>
-
-          {/* Clear View */}
-          <button
-            type="button"
-            onClick={handleClearView}
-            aria-label="Clear log view"
-            className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-zinc-300"
-            title="Clear display"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          </ToolbarIconButton>
+          <ToolbarIconButton label="Download .log" onClick={handleDownloadLogs}>
+            <Download className="size-4" />
+          </ToolbarIconButton>
         </div>
       </div>
 
-      {/* Main Terminal Viewport */}
+      {/* Log output */}
       <div
         ref={scrollViewportRef}
         onScroll={handleScroll}
-        className={cn(
-          "flex-1 overflow-auto font-mono text-[11.5px] leading-[1.65] text-zinc-300 selection:bg-sky-500/30 selection:text-white",
-          !wrapLines && "whitespace-pre",
-        )}
+        className="min-h-0 flex-1 overflow-auto bg-[#060709] font-mono text-[12px] leading-[1.65] text-zinc-300 selection:bg-sky-500/30 selection:text-white"
       >
-        <div className="min-w-full p-3 sm:p-4">
-          {lines.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="relative mb-3 flex size-10 items-center justify-center rounded-xl bg-zinc-900/90 ring-1 ring-white/10">
-                <Terminal className="size-5 text-sky-400" />
-                {showStreaming && (
-                  <span className="absolute -top-1 -right-1 flex size-3">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
-                    <span className="relative inline-flex size-3 rounded-full bg-sky-500" />
-                  </span>
-                )}
-              </div>
-              <p className="text-xs font-medium text-zinc-300">
-                {showStreaming
-                  ? "Connecting to deployment log stream..."
-                  : "Waiting for logs..."}
-              </p>
-              <p className="mt-1 font-mono text-[11px] text-zinc-600">
-                shipyard@runner:~$ tail -f {deployId}.log
-              </p>
-            </div>
-          ) : null}
+        {lines.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center px-6 py-16 text-center">
+            {showStreaming ? (
+              <Loader2 className="size-5 animate-spin text-sky-400" />
+            ) : (
+              <Terminal className="size-5 text-zinc-600" />
+            )}
+            <p className="mt-3 font-sans text-xs text-zinc-400">
+              {showStreaming ? "Waiting for output…" : "No output recorded."}
+            </p>
+          </div>
+        ) : filteredLines.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-16 text-center font-sans">
+            <p className="text-xs text-zinc-400">
+              No lines match the current filter.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setLevelFilter("all");
+              }}
+              className="mt-3 rounded-md px-2.5 py-1 text-xs text-sky-300 ring-1 ring-sky-500/30 hover:bg-sky-500/10"
+            >
+              Show all lines
+            </button>
+          </div>
+        ) : (
+          <div className={cn("py-3", !wrapLines && "w-max min-w-full")}>
+            {filteredLines.map((line) => {
+              if (line.kind === "stage") {
+                return (
+                  <div
+                    key={line.id}
+                    className="my-2.5 flex items-center gap-2 px-3 sm:px-4"
+                  >
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/10 px-2 py-0.5 font-sans text-[10.5px] font-semibold tracking-wider text-sky-300 uppercase ring-1 ring-sky-500/20">
+                      <Layers className="size-3" />
+                      {line.clean || line.raw}
+                    </span>
+                    <span className="h-px flex-1 bg-white/[0.06]" />
+                  </div>
+                );
+              }
 
-          {filteredLines.map((line, idx) => {
-            if (line.kind === "stage") {
               return (
                 <div
                   key={line.id}
-                  className="my-3 flex items-center gap-3 overflow-hidden rounded-lg bg-zinc-900/70 px-3 py-1.5 ring-1 ring-sky-500/20"
-                >
-                  <Layers className="size-3.5 shrink-0 text-sky-400" />
-                  <span className="font-mono text-[11px] font-bold tracking-wider text-sky-300 uppercase">
-                    {line.clean || line.raw}
-                  </span>
-                  <div className="h-px flex-1 bg-gradient-to-r from-sky-500/20 to-transparent" />
-                </div>
-              );
-            }
-
-            if (line.kind === "separator") {
-              return (
-                <div
-                  key={line.id}
-                  className="my-3 flex items-center gap-2 font-mono text-[10px] text-zinc-500"
-                >
-                  <div className="h-px flex-1 bg-white/10" />
-                  <span className="tracking-widest uppercase">{line.raw}</span>
-                  <div className="h-px flex-1 bg-white/10" />
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={line.id}
-                className={cn(
-                  "group flex items-start rounded-xs transition-colors hover:bg-white/[0.03]",
-                  line.kind === "error" &&
-                    "border-l-2 border-red-500/80 bg-red-500/[0.08] pl-1 text-red-300",
-                  line.kind === "warning" &&
-                    "border-l-2 border-amber-500/80 bg-amber-500/[0.08] pl-1 text-amber-300",
-                  line.kind === "success" && "text-emerald-300",
-                )}
-              >
-                {/* Line number */}
-                {showLineNumbers && (
-                  <span className="mr-3 w-8 shrink-0 text-right font-mono text-[10.5px] text-zinc-600 select-none group-hover:text-zinc-400">
-                    {idx + 1}
-                  </span>
-                )}
-
-                {/* Line content */}
-                <div
                   className={cn(
-                    "min-w-0 flex-1",
-                    wrapLines
-                      ? "break-words whitespace-pre-wrap"
-                      : "whitespace-pre",
+                    "group flex gap-3 px-3 hover:bg-white/[0.025] sm:px-4",
+                    line.kind === "error" &&
+                      "bg-red-500/[0.07] text-red-200 shadow-[inset_2px_0_0_rgba(248,113,113,0.7)]",
+                    line.kind === "warning" &&
+                      "bg-amber-500/[0.06] text-amber-200 shadow-[inset_2px_0_0_rgba(251,191,36,0.7)]",
+                    line.kind === "success" && "text-emerald-300",
                   )}
                 >
-                  <AnsiRenderer text={line.raw} searchQuery={searchQuery} />
+                  <span className="hidden w-8 shrink-0 text-right text-[11px] text-zinc-700 tabular-nums select-none group-hover:text-zinc-500 sm:block">
+                    {line.id}
+                  </span>
+                  <div
+                    className={cn(
+                      "min-w-0 flex-1",
+                      wrapLines
+                        ? "break-words whitespace-pre-wrap"
+                        : "whitespace-pre",
+                    )}
+                  >
+                    {line.raw ? (
+                      <AnsiRenderer text={line.raw} searchQuery={searchQuery} />
+                    ) : (
+                      " "
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        )}
 
-          {/* Active Blinking Cursor while streaming */}
-          {showStreaming && (
-            <div className="mt-2 flex items-center gap-2 text-zinc-500">
-              {showLineNumbers && (
-                <span className="w-8 text-right font-mono text-[10.5px] text-zinc-700 select-none">
-                  {filteredLines.length + 1}
-                </span>
+        {showStreaming && lines.length > 0 ? (
+          <div className="sticky left-0 flex items-center gap-2 px-3 pb-3 font-sans text-[11px] text-zinc-500 sm:px-4">
+            <span className="inline-block h-3.5 w-1.5 animate-pulse rounded-[1px] bg-emerald-400" />
+            Streaming output…
+          </div>
+        ) : null}
+
+        {exitStatus ? (
+          <div className="sticky left-0 px-3 pb-4 sm:px-4">
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-2 font-sans text-xs ring-1",
+                exitTone,
               )}
-              <span className="inline-block h-4 w-2 animate-pulse bg-emerald-400 align-middle shadow-[0_0_8px_#34d399]" />
-              <span className="font-mono text-[11px] text-zinc-600">
-                executing...
+            >
+              {exitStatus === "success" ? (
+                <CheckCircle2 className="size-4 shrink-0" />
+              ) : exitStatus === "failed" ? (
+                <XCircle className="size-4 shrink-0" />
+              ) : (
+                <CircleSlash className="size-4 shrink-0" />
+              )}
+              <span className="font-medium capitalize">
+                Deployment {exitStatus.replaceAll("_", " ")}
               </span>
+              <span className="text-zinc-500">· process exited</span>
             </div>
-          )}
-
-          <div ref={bottomAnchorRef} className="h-4" />
-        </div>
+          </div>
+        ) : null}
       </div>
 
-      {/* Floating Jump to Bottom Button */}
       <AnimatePresence>
-        {isUserScrolledUp && (
+        {isUserScrolledUp ? (
           <motion.button
+            type="button"
             initial={{ opacity: 0, y: 10, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }}
             onClick={scrollToBottom}
-            className="absolute right-6 bottom-4 z-20 flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 font-mono text-[11px] font-medium text-white shadow-lg ring-1 shadow-sky-950/80 ring-sky-400/40 hover:bg-sky-500"
+            className="absolute right-4 bottom-4 z-20 flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-950 shadow-lg shadow-black/60 hover:bg-white"
           >
             <ArrowDown className="size-3.5" />
-            <span>Jump to latest</span>
-            {showStreaming && (
-              <span className="size-1.5 animate-ping rounded-full bg-white" />
-            )}
+            Jump to latest
+            {showStreaming ? (
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+            ) : null}
           </motion.button>
-        )}
+        ) : null}
       </AnimatePresence>
     </div>
+  );
+}
+
+function MetaItem({
+  icon: Icon,
+  children,
+  mono = false,
+  title,
+}: {
+  icon: typeof Clock3;
+  children: React.ReactNode;
+  mono?: boolean;
+  title?: string;
+}) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1.5 text-zinc-400",
+        mono && "font-mono text-[11px]",
+      )}
+    >
+      <Icon className="size-3.5 shrink-0 text-zinc-500" />
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
@@ -766,124 +758,96 @@ function DeploymentOverview({
   deploy: DeployHistoryItem | null;
   currentRevision?: string | null;
 }) {
-  const isActive = deploy
-    ? ["queued", "running", "verifying"].includes(deploy.status)
-    : false;
+  const isActive = deploy ? activeStatuses.includes(deploy.status) : false;
   const now = useCurrentTime(isActive);
 
   if (!deploy) {
-    return (
-      <div className="border-b border-white/[0.08] bg-[#0c0d12]/60 px-4 py-4 text-xs text-zinc-500">
-        Select a deployment to inspect its overview and logs.
-      </div>
-    );
+    return null;
   }
 
-  const isFailure = [
-    "failed",
-    "timed_out",
-    "interrupted",
-    "cancelled",
-  ].includes(deploy.status);
+  const isFailure = failedStatuses.includes(deploy.status);
   const duration =
     deploy.durationMs ??
     (isActive && deploy.startedAt && now > 0
       ? Math.max(0, now - new Date(deploy.startedAt).getTime())
       : null);
-  const stageLabel = {
-    queued: "Queued",
-    running: "Deploying",
-    verifying: "Verifying health",
-    success: "Live",
-    failed: "Failed",
-    cancelled: "Cancelled",
-    timed_out: "Timed out",
-    interrupted: "Interrupted",
-    idle: "Idle",
-  }[deploy.stage ?? deploy.status];
 
   return (
-    <div className="border-b border-white/[0.08] bg-[#0c0d12]/60 px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold tracking-[0.16em] text-zinc-500 uppercase">
-            Deployment overview
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-zinc-100">
-              {deploy.action === "rollback" ? "Rollback" : "Deploy"}
-            </span>
-            <span className="text-xs text-zinc-500">·</span>
-            <span className="text-xs text-zinc-400">{stageLabel}</span>
-            {deploy.environment ? (
-              <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
-                {deploy.environment}
-              </span>
-            ) : null}
-          </div>
-        </div>
+    <div className="border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <StatusBadge status={deploy.status} />
+        <span className="text-sm font-medium text-zinc-100">
+          {deploy.action === "rollback" ? "Rollback" : "Deploy"}
+          <span className="text-zinc-500">
+            {" "}
+            · {stageLabel[deploy.stage ?? deploy.status]}
+          </span>
+        </span>
+        {deploy.environment ? (
+          <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[10.5px] text-zinc-400 capitalize ring-1 ring-white/[0.06]">
+            {deploy.environment}
+          </span>
+        ) : null}
       </div>
 
       {deploy.commitMessage ? (
-        <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-zinc-300">
-          “{deploy.commitMessage}”
+        <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-zinc-300">
+          {deploy.commitMessage}
         </p>
       ) : null}
 
-      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-[11px] sm:grid-cols-4">
-        <div>
-          <p className="text-zinc-600">Branch</p>
-          <p className="mt-1 flex items-center gap-1 truncate font-mono text-zinc-300">
-            <GitBranch className="size-3 text-sky-400" />
-            {deploy.branch ?? "unknown"}
-          </p>
-        </div>
-        <div>
-          <p className="text-zinc-600">Revision</p>
-          <p className="mt-1 flex items-center gap-1 font-mono text-zinc-300">
-            <GitCommitHorizontal className="size-3 text-zinc-500" />
-            {deploy.revision?.slice(0, 8) ?? "unknown"}
-          </p>
-        </div>
-        <div>
-          <p className="text-zinc-600">Duration</p>
-          <p className="mt-1 font-mono text-zinc-300">
-            {duration == null
-              ? "—"
-              : `${(duration / 1000).toFixed(1)}s${isActive ? " elapsed" : ""}`}
-          </p>
-        </div>
-        <div>
-          <p className="text-zinc-600">Requested by</p>
-          <p className="mt-1 flex items-center gap-1 truncate text-zinc-300">
-            <User className="size-3 text-zinc-500" />
-            {deploy.requestedBy}
-          </p>
-        </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+        <MetaItem icon={Clock3} title={formatDeployTime(deploy.createdAt)}>
+          {formatRelativeDeployTime(deploy.createdAt)}
+        </MetaItem>
+        {duration != null ? (
+          <MetaItem icon={Timer} mono>
+            {formatDuration(duration)}
+            {isActive ? " elapsed" : ""}
+          </MetaItem>
+        ) : null}
+        {deploy.branch ? (
+          <MetaItem icon={GitBranch} mono>
+            {deploy.branch}
+          </MetaItem>
+        ) : null}
+        {deploy.revision ? (
+          <MetaItem icon={GitCommitHorizontal} mono>
+            {deploy.revision.slice(0, 8)}
+          </MetaItem>
+        ) : null}
+        <MetaItem icon={User}>{deploy.requestedBy}</MetaItem>
+        {deploy.exitCode != null ? (
+          <span
+            className={cn(
+              "rounded-md px-1.5 py-0.5 font-mono text-[10.5px] ring-1",
+              deploy.exitCode === 0
+                ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/20"
+                : "bg-red-500/10 text-red-300 ring-red-500/20",
+            )}
+          >
+            exit {deploy.exitCode}
+          </span>
+        ) : null}
       </div>
 
       {currentRevision && deploy.status === "success" ? (
-        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-emerald-300">
+        <p className="mt-2.5 flex items-center gap-1.5 text-xs text-emerald-300/90">
           <CheckCircle2 className="size-3.5" />
-          Live revision is {currentRevision.slice(0, 8)}
+          Live revision is{" "}
+          <span className="font-mono">{currentRevision.slice(0, 8)}</span>
         </p>
       ) : null}
       {deploy.status === "verifying" ? (
-        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-sky-300">
+        <p className="mt-2.5 flex items-center gap-1.5 text-xs text-sky-300">
           <Clock3 className="size-3.5" />
-          Health check is running; the deployment will be marked live when it
-          passes.
+          Health check is running; the deployment goes live when it passes.
         </p>
       ) : null}
       {isFailure && deploy.failureSummary ? (
-        <div className="mt-3 rounded-lg border border-red-500/20 bg-red-950/30 px-3 py-2.5">
-          <p className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-red-300 uppercase">
-            <AlertCircle className="size-3" />
-            Failure summary
-            {deploy.exitCode != null ? ` · exit ${deploy.exitCode}` : ""}
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-red-200/80">
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-950/30 px-3 py-2.5 text-xs">
+          <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-red-400" />
+          <p className="leading-relaxed text-red-200/90">
             {deploy.failureSummary}
           </p>
         </div>
@@ -891,6 +855,13 @@ function DeploymentOverview({
     </div>
   );
 }
+
+const historyFilters: { id: "all" | StatusGroup; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "healthy", label: "Success" },
+  { id: "failed", label: "Failed" },
+  { id: "active", label: "Running" },
+];
 
 export function LogPanel({
   appId,
@@ -906,22 +877,36 @@ export function LogPanel({
     string | null
   >(null);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | StatusGroup>("all");
   const [isExpanded, setIsExpanded] = useState(false);
+  // Mobile only: history replaces the log view instead of sitting beside it.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const history = useDeployHistory(appId, open);
   const cancelDeploy = useCancelDeploy();
   const rollback = useRollback();
 
   const filteredHistory = useMemo(() => {
-    return history.data?.filter((deploy) => {
+    const needle = query.toLowerCase();
+    return (history.data ?? []).filter((deploy) => {
       const matchesStatus =
-        statusFilter === "all" || deploy.status === statusFilter;
+        statusFilter === "all" || statusGroup(deploy.status) === statusFilter;
       const haystack =
         `${deploy.branch ?? ""} ${deploy.revision ?? ""} ${deploy.commitMessage ?? ""} ${deploy.id}`.toLowerCase();
-      return matchesStatus && haystack.includes(query.toLowerCase());
+      return matchesStatus && haystack.includes(needle);
     });
   }, [history.data, statusFilter, query]);
+
+  const groupedHistory = useMemo(() => {
+    const groups: { label: string; items: DeployHistoryItem[] }[] = [];
+    for (const deploy of filteredHistory) {
+      const label = dayLabel(deploy.createdAt);
+      const last = groups.at(-1);
+      if (last && last.label === label) last.items.push(deploy);
+      else groups.push({ label, items: [deploy] });
+    }
+    return groups;
+  }, [filteredHistory]);
 
   const selectedDeployId =
     manualSelectedDeployId &&
@@ -932,298 +917,256 @@ export function LogPanel({
   const selectedDeploy =
     history.data?.find((deploy) => deploy.id === selectedDeployId) ?? null;
   const selectedStatus = selectedDeploy?.status ?? status;
+  const isSelectedActive = activeStatuses.includes(
+    selectedStatus ?? "idle",
+  );
+  const totalDeploys = history.data?.length ?? 0;
 
   return (
     <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <SheetContent
         className={cn(
-          "flex w-full flex-col gap-0 p-0 transition-all duration-300 ease-in-out",
+          "flex w-full flex-col gap-0 border-white/10 bg-[#08090c] p-0 transition-[max-width] duration-300 ease-in-out",
+          "[&>button:last-child]:top-3.5 [&>button:last-child]:right-3 [&>button:last-child]:rounded-lg [&>button:last-child]:p-1.5 [&>button:last-child]:text-zinc-400 [&>button:last-child]:opacity-100 [&>button:last-child]:hover:bg-white/[0.06] [&>button:last-child]:hover:text-white",
           isExpanded
             ? "sm:max-w-[96vw] xl:max-w-[94vw]"
-            : "sm:max-w-5xl lg:max-w-6xl",
+            : "sm:max-w-4xl lg:max-w-6xl",
         )}
-        style={{
-          background: "#08090d",
-          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-        }}
       >
-        <motion.div
-          initial={{ opacity: 0, x: 16 }}
-          animate={open ? { opacity: 1, x: 0 } : { opacity: 0, x: 16 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="flex h-full flex-1 flex-col overflow-hidden"
-        >
-          {/* Main Top Header */}
-          <SheetHeader className="flex-row items-center justify-between border-b border-white/[0.08] bg-[#0c0d12]/95 px-5 py-3.5 backdrop-blur-md">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <div className="flex size-7 items-center justify-center rounded-lg bg-zinc-800/90 ring-1 ring-white/15">
-                  <Terminal className="size-4 text-sky-400" />
-                </div>
-                <SheetTitle className="text-[15px] font-semibold tracking-tight text-white">
-                  {appLabel}
-                </SheetTitle>
-              </div>
+        {/* Header */}
+        <SheetHeader className="h-14 shrink-0 flex-row items-center gap-3 space-y-0 border-b border-white/[0.06] px-4 py-0 pr-14 sm:px-5 sm:pr-14">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800/80 ring-1 ring-white/10">
+            <Terminal className="size-4 text-sky-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <SheetTitle className="truncate text-[15px] leading-tight font-semibold tracking-tight text-white">
+              {appLabel}
+            </SheetTitle>
+            <SheetDescription className="truncate text-xs text-zinc-500">
+              Deployments &amp; logs
+            </SheetDescription>
+          </div>
 
-              {selectedStatus && <StatusBadge status={selectedStatus} />}
-
-              {/* Action Buttons */}
-              {["queued", "running", "verifying"].includes(
-                selectedStatus ?? "",
-              ) && selectedDeployId ? (
-                <button
-                  type="button"
-                  disabled={cancelDeploy.isPending}
-                  aria-label="Cancel active deployment"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Cancel this deployment? The running process will be terminated.",
-                      )
-                    ) {
-                      cancelDeploy.mutate(selectedDeployId);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-950/50 px-2.5 py-1 text-xs font-medium text-red-300 shadow-sm transition-colors hover:bg-red-900/60"
-                >
-                  <Square className="size-3 fill-current text-red-400" />
-                  Cancel Deploy
-                </button>
-              ) : null}
-
-              {canRollback &&
-              !["queued", "running", "verifying"].includes(
-                selectedStatus ?? "",
-              ) ? (
-                <button
-                  type="button"
-                  disabled={rollback.isPending}
-                  aria-label="Rollback to previous successful revision"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Roll back to revision " +
-                          (
-                            selectedDeploy?.previousRevision ??
-                            "previous successful revision"
-                          ).slice(0, 8) +
-                          (currentRevision
-                            ? " from " + currentRevision.slice(0, 8)
-                            : "") +
-                          "? The current live revision may be replaced.",
-                      )
-                    ) {
-                      rollback.mutate(appId);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-950/50 px-2.5 py-1 text-xs font-medium text-amber-300 shadow-sm transition-colors hover:bg-amber-900/60"
-                >
-                  <Undo2 className="size-3 text-amber-400" />
-                  Rollback
-                </button>
-              ) : null}
-            </div>
-
-            {/* Header Right Actions */}
-            <div className="flex items-center gap-2 pr-6">
-              {/* Expand / Maximize Sheet Toggle */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {isSelectedActive && selectedDeployId ? (
               <button
                 type="button"
-                onClick={() => setIsExpanded((v) => !v)}
-                aria-label={
-                  isExpanded
-                    ? "Collapse deployment details"
-                    : "Expand deployment details"
-                }
-                className="hidden rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white sm:block"
-                title={isExpanded ? "Collapse width" : "Expand width"}
+                disabled={cancelDeploy.isPending}
+                aria-label="Cancel active deployment"
+                title="Cancel deployment"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Cancel this deployment? The running process will be terminated.",
+                    )
+                  ) {
+                    cancelDeploy.mutate(selectedDeployId);
+                  }
+                }}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-950/40 px-2.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-900/50 disabled:opacity-50"
               >
-                {isExpanded ? (
-                  <Minimize2 className="size-4" />
-                ) : (
-                  <Maximize2 className="size-4" />
-                )}
+                <Square className="size-3 fill-current" />
+                <span className="hidden sm:inline">Cancel</span>
               </button>
+            ) : null}
 
-              <SheetDescription className="hidden font-mono text-[11px] text-zinc-400 md:inline-block">
-                {selectedDeployId ? (
-                  <span className="rounded bg-zinc-900 px-2 py-0.5 ring-1 ring-white/10">
-                    {selectedDeployId}
-                  </span>
-                ) : (
-                  "No deploy selected"
-                )}
-              </SheetDescription>
-            </div>
-          </SheetHeader>
+            {canRollback && !isSelectedActive ? (
+              <button
+                type="button"
+                disabled={rollback.isPending}
+                aria-label="Rollback to previous successful revision"
+                title="Rollback to previous revision"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Roll back to revision " +
+                        (
+                          selectedDeploy?.previousRevision ??
+                          "previous successful revision"
+                        ).slice(0, 8) +
+                        (currentRevision
+                          ? " from " + currentRevision.slice(0, 8)
+                          : "") +
+                        "? The current live revision may be replaced.",
+                    )
+                  ) {
+                    rollback.mutate(appId);
+                  }
+                }}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900/80 px-2.5 text-xs font-medium text-zinc-300 transition-colors hover:border-amber-500/30 hover:bg-amber-950/30 hover:text-amber-200 disabled:opacity-50"
+              >
+                <Undo2 className="size-3.5" />
+                <span className="hidden sm:inline">Rollback</span>
+              </button>
+            ) : null}
 
-          {/* Split Body: Sidebar & Terminal */}
-          <div className="grid min-h-0 flex-1 md:grid-cols-[300px_minmax(0,1fr)]">
-            {/* Left: Deploy History Sidebar */}
-            <div className="flex min-h-0 flex-col border-b border-white/[0.08] bg-[#090a0e] md:border-r md:border-b-0">
-              <div className="border-b border-white/[0.06] p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                    <Clock3 className="size-3.5 text-zinc-400" />
-                    Deploy History
-                  </div>
-                  {filteredHistory && (
-                    <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
-                      {filteredHistory.length}
-                    </span>
-                  )}
-                </div>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((v) => !v)}
+              aria-pressed={historyOpen}
+              aria-label={
+                historyOpen ? "Back to logs" : "Show deployment history"
+              }
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900/80 px-2.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 md:hidden"
+            >
+              {historyOpen ? (
+                <>
+                  <ArrowLeft className="size-3.5" />
+                  Logs
+                </>
+              ) : (
+                <>
+                  <History className="size-3.5" />
+                  {totalDeploys > 0 ? totalDeploys : "History"}
+                </>
+              )}
+            </button>
 
-                <div className="relative mt-3">
-                  <Search className="absolute top-2.5 left-2.5 size-3.5 text-zinc-500" />
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search commits, branches..."
-                    className="h-8 w-full rounded-lg border border-white/10 bg-zinc-950/80 pr-2 pl-8 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-white/25 focus:ring-1 focus:ring-white/20 focus:outline-none"
-                  />
-                  {query && (
-                    <button
-                      type="button"
-                      onClick={() => setQuery("")}
-                      className="absolute top-2.5 right-2 text-zinc-500 hover:text-zinc-300"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  )}
-                </div>
+            <button
+              type="button"
+              onClick={() => setIsExpanded((v) => !v)}
+              aria-label={isExpanded ? "Collapse panel" : "Expand panel"}
+              title={isExpanded ? "Collapse width" : "Expand width"}
+              className="hidden size-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-white md:flex"
+            >
+              {isExpanded ? (
+                <Minimize2 className="size-4" />
+              ) : (
+                <Maximize2 className="size-4" />
+              )}
+            </button>
+          </div>
+        </SheetHeader>
 
-                <label className="sr-only" htmlFor={`history-status-${appId}`}>
-                  Filter deployment history by status
-                </label>
-                <select
-                  id={`history-status-${appId}`}
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                  className="mt-2 h-8 w-full rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 text-xs text-zinc-300 outline-none focus:border-white/25"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="success">Success</option>
-                  <option value="failed">Failed</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="queued">Queued</option>
-                  <option value="running">Running</option>
-                  <option value="verifying">Verifying</option>
-                  <option value="timed_out">Timed out</option>
-                  <option value="interrupted">Interrupted</option>
-                </select>
+        {/* Body */}
+        <div className="flex min-h-0 flex-1">
+          {/* History */}
+          <aside
+            className={cn(
+              "min-h-0 w-full flex-col bg-[#0a0b0f] md:flex md:w-72 md:shrink-0 md:border-r md:border-white/[0.06]",
+              historyOpen ? "flex" : "hidden",
+            )}
+            aria-label="Deployment history"
+          >
+            <div className="space-y-2 border-b border-white/[0.06] p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-zinc-500" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  aria-label="Search deployments"
+                  placeholder="Search deployments"
+                  className="h-8 w-full rounded-lg border border-white/[0.08] bg-zinc-900/70 pr-7 pl-8 text-xs text-zinc-200 transition outline-none placeholder:text-zinc-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/15"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Clear deployment search"
+                    className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded text-zinc-500 hover:text-zinc-200"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                ) : null}
               </div>
+              <div
+                role="group"
+                aria-label="Filter deployments by status"
+                className="flex gap-1"
+              >
+                {historyFilters.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    aria-pressed={statusFilter === filter.id}
+                    onClick={() => setStatusFilter(filter.id)}
+                    className={cn(
+                      "h-7 flex-1 rounded-md text-[11px] font-medium transition-colors",
+                      statusFilter === filter.id
+                        ? "bg-white/10 text-white"
+                        : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200",
+                    )}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-              {/* History List */}
-              <ScrollArea className="h-[220px] flex-1 md:h-full">
-                <div className="space-y-2 p-3">
-                  {history.isLoading ? (
-                    <div className="space-y-2.5 p-2">
-                      {Array.from({ length: 4 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="h-20 animate-pulse rounded-xl bg-zinc-900/60 ring-1 ring-white/5"
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {history.isError ? (
-                    <div className="flex items-center gap-2 rounded-lg bg-red-950/40 p-3 text-xs text-red-300 ring-1 ring-red-500/20">
-                      <AlertCircle className="size-4 shrink-0 text-red-400" />
-                      Failed to load deploy history.
-                    </div>
-                  ) : null}
-
-                  {!history.isLoading &&
-                  !history.isError &&
-                  filteredHistory?.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-zinc-500">
-                      No deployments match your filters.
-                    </div>
-                  ) : null}
-
-                  {filteredHistory?.map((deploy) => (
-                    <DeployHistoryButton
-                      key={deploy.id}
-                      deploy={deploy}
-                      active={deploy.id === selectedDeployId}
-                      onSelect={() => setManualSelectedDeployId(deploy.id)}
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {history.isLoading ? (
+                <div className="space-y-1.5 p-1">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-12 animate-pulse rounded-lg bg-zinc-900/60"
                     />
                   ))}
                 </div>
-              </ScrollArea>
-            </div>
+              ) : null}
 
-            {/* Right: Selected Deploy Metadata Banner & Stream Terminal */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#07080b]">
-              <DeploymentOverview
-                deploy={selectedDeploy}
-                currentRevision={currentRevision}
-              />
-              {/* Deploy Metadata Banner */}
-              <div className="border-b border-white/[0.08] bg-[#0c0d12]/60 px-4 py-2.5">
-                {selectedDeploy ? (
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11px] text-zinc-400">
-                    <div className="flex items-center gap-1.5 text-zinc-300">
-                      <Clock3 className="size-3 text-zinc-500" />
-                      <span>{formatDeployTime(selectedDeploy.createdAt)}</span>
-                    </div>
+              {history.isError ? (
+                <div className="m-1 flex items-center gap-2 rounded-lg bg-red-950/40 p-3 text-xs text-red-300 ring-1 ring-red-500/20">
+                  <AlertCircle className="size-4 shrink-0 text-red-400" />
+                  Failed to load deploy history.
+                </div>
+              ) : null}
 
-                    <div className="flex items-center gap-1 text-zinc-300">
-                      <GitBranch className="size-3 text-sky-400" />
-                      <span>{selectedDeploy.branch ?? "unknown branch"}</span>
-                    </div>
+              {!history.isLoading &&
+              !history.isError &&
+              filteredHistory.length === 0 ? (
+                <p className="py-10 text-center text-xs text-zinc-500">
+                  {totalDeploys === 0
+                    ? "No deployments yet."
+                    : "No deployments match your filters."}
+                </p>
+              ) : null}
 
-                    <div className="flex items-center gap-1 text-zinc-300">
-                      <GitCommitHorizontal className="size-3 text-zinc-500" />
-                      <span>
-                        {selectedDeploy.revision?.slice(0, 8) ?? "no revision"}
-                      </span>
-                    </div>
-
-                    {selectedDeploy.durationMs != null ? (
-                      <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-zinc-300 ring-1 ring-white/10">
-                        ⏱️ {(selectedDeploy.durationMs / 1000).toFixed(1)}s
-                      </span>
-                    ) : null}
-
-                    {selectedDeploy.exitCode != null ? (
-                      <span
-                        className={cn(
-                          "rounded px-1.5 py-0.5 font-semibold ring-1",
-                          selectedDeploy.exitCode === 0
-                            ? "bg-emerald-950/60 text-emerald-300 ring-emerald-500/30"
-                            : "bg-red-950/60 text-red-300 ring-red-500/30",
-                        )}
-                      >
-                        exit {selectedDeploy.exitCode}
-                      </span>
-                    ) : null}
-
-                    <div className="flex items-center gap-1 text-zinc-400">
-                      <User className="size-3 text-zinc-500" />
-                      <span>by {selectedDeploy.requestedBy}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="font-mono text-xs text-zinc-500">
-                    Select a deploy to inspect logs
+              {groupedHistory.map((group) => (
+                <div key={group.label} className="mb-2">
+                  <p className="sticky top-0 z-10 bg-[#0a0b0f]/95 px-2.5 pt-2 pb-1.5 text-[10.5px] font-medium tracking-wider text-zinc-500 uppercase backdrop-blur">
+                    {group.label}
                   </p>
-                )}
-              </div>
-
-              {/* Streamed Terminal Console */}
-              <div className="min-h-0 flex-1">
-                <StreamedDeployLogs
-                  key={selectedDeployId ?? "empty"}
-                  deployId={selectedDeployId}
-                  appLabel={appLabel}
-                />
-              </div>
+                  <div className="space-y-0.5">
+                    {group.items.map((deploy) => (
+                      <DeployHistoryButton
+                        key={deploy.id}
+                        deploy={deploy}
+                        active={deploy.id === selectedDeployId}
+                        onSelect={() => {
+                          setManualSelectedDeployId(deploy.id);
+                          setHistoryOpen(false);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        </motion.div>
+          </aside>
+
+          {/* Selected deployment */}
+          <section
+            className={cn(
+              "min-h-0 min-w-0 flex-1 flex-col",
+              historyOpen ? "hidden md:flex" : "flex",
+            )}
+            aria-label="Deployment logs"
+          >
+            <DeploymentOverview
+              deploy={selectedDeploy}
+              currentRevision={currentRevision}
+            />
+            <div className="min-h-0 flex-1">
+              <StreamedDeployLogs
+                key={selectedDeployId ?? "empty"}
+                deployId={selectedDeployId}
+                appLabel={appLabel}
+              />
+            </div>
+          </section>
+        </div>
+
       </SheetContent>
     </Sheet>
   );
